@@ -2,7 +2,7 @@
 XsdSchema-aware XML serializer for TypeScript 
 
 Having such a schema
-```
+```xsd
 <?xml version="1.0" encoding="utf-8" ?>
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
 
@@ -27,8 +27,8 @@ Having such a schema
 
 </xs:schema>
 ```
-Mapped to the classes and deserializing a compiant XML
-```
+Mapped to the classes and deserializing a compliant XML
+```typescript
 import {XmlRoot, XmlAttribute, XmlElement, XmlComplexType} from 'xtyped-serializer/annotations';
 import xs from 'xtyped-serializer/serializer'
 
