@@ -1,2 +1,2 @@
 # typed-serializer
-xtyped-serializer
+XsdSchema-aware serializer for TypeScript
