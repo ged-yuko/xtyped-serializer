@@ -1,4 +1,4 @@
-import { findModelTypeInfoByType, XmlModelItemReference, IXmlElementParameters, XmlModelTypeInfo } from "./xml-modeling";
+import { findModelTypeInfoByType, XmlModelItemReference, IXmlElementParameters, XmlModelTypeInfo } from "./annotations";
 import { isArrayInstanceOf } from "./util";
 
 export interface IXmlValueModelVisitor<T, TRet> {

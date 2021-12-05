@@ -69,23 +69,6 @@ export class XmlModelItemReference {
 
 const _knownModelTypesByCtor = new Map<Function, XmlModelTypeInfo>();
 
-class XmlModelAttributeRepresentationInfo {
-    public constructor (
-        public readonly name: string,
-        public readonly params?: IXmlAttributeParameters
-    ) {
-    }
-}
-
-class XmlModelElementRepresentationInfo {
-    public constructor (
-        public readonly name: string,
-        public readonly order: number,
-        public readonly params?: IXmlElementParameters
-    ) {
-    }
-}
-
 export class XmlModelPropertyInfo {
 
     private _attributeSpec = new Array<IXmlAttributeParameters>();

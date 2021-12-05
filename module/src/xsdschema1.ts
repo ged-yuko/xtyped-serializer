@@ -1,4 +1,4 @@
-import { XmlRoot, XmlAttribute, XmlElement, XmlComplexType, XmlSimpleType, XmlEnumerationValues } from "./xml-modeling";
+import { XmlRoot, XmlAttribute, XmlElement, XmlComplexType, XmlSimpleType, XmlEnumerationValues } from "./annotations";
 
 // XmlAttributeGroup, XmlElementGroup, XmlInclude, XmlAttributeGroupRef
 

@@ -1,23 +1,27 @@
 {
   "compileOnSave": false,
   "compilerOptions": {
+    "pretty": true,
+    "preserveConstEnums": true,
     "module": "esnext",
     "skipLibCheck": true,
     "typeRoots": [
       "./node_modules/@types"
     ],
+    "declaration": true,
     "removeComments": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "sourceMap": true,
     "target": "es5",
+    "outDir": "./lib",
     "lib": [
       "es2015",
       "dom",
       "ESNext"
     ],
     "moduleResolution": "node",
-    "baseUrl": "src",
+    "baseUrl": "./src",
     "resolveJsonModule": true,
     "allowJs": true,
     "noImplicitOverride": true,
@@ -32,6 +36,10 @@
     "./src/**/*.ts",
     "./test/**/*.ts",
     "./types/**/*.d.ts"
+  ],
+  "exclude": [
+    "./node_modules",
+    "**/__tests__/*"
   ],
   "atom": {
     "rewriteTsconfig": false

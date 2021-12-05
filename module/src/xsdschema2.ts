@@ -1,4 +1,4 @@
-import { XmlComplexType, XmlRoot, XmlAttribute, XmlSimpleType, XmlEnumerationValues, XmlElement, XmlArray } from "./xml-modeling";
+import { XmlComplexType, XmlRoot, XmlAttribute, XmlSimpleType, XmlEnumerationValues, XmlElement, XmlArray } from "./annotations";
 
 export interface IXsdSchemaDeclaration {
     
