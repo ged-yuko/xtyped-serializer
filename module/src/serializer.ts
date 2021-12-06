@@ -1,4 +1,4 @@
-import { ICtor, XmlModelItemReference, XmlModelTypeInfo, XmlModelPropertyInfo, findModelTypeInfoByType, MyConstructor } from "./annotations";
+import { ICtor, XmlModelItemReference, XmlModelTypeInfo, XmlModelPropertyInfo, findModelTypeInfoByType, MyConstructor, findModelTypeInfoByObjType, IXmlModelItemReference } from "./annotations";
 import * as m from "./content-model";
 import { ImmStack, collectTree } from "./util";
 
@@ -110,11 +110,6 @@ class XmlElementMapping {
             }
         });
     }
-}
-
-function llog<T>(o: T): T {
-    console.warn(o);
-    return o;
 }
 
 const findRootMapping = <T> (e: Element, ...type: ICtor<T>[]) : XmlElementMapping|undefined => {    
@@ -378,18 +373,18 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
             const childs = childsOf(node);
             const elements = <Element[]> childs.subnodes.filter(n => n instanceof Element);
             const mapper = new XmlDomToObjMapper(elements);
-            const contentSteps = mapper.visit(XmlDomToObjCtx.initial(model), model.content.sequence);
+            const contentSteps = mapper.visit(XmlDomToObjCtx.initial(model), model.content.getSequence());
 
-            const tre = contentSteps.map(t => collectTree(t, s => s.childs, s => s.part.toString() + ' @' + s.pos));
-            tre.forEach(t => console.warn(t));
-            console.warn(model);
+            //const tre = contentSteps.map(t => collectTree(t, s => s.childs, s => s.part.toString() + ' @' + s.pos));
+            // tre.forEach(t => console.warn(t));
+            // console.warn(model);
 
             if (contentSteps.length !== 1) {
                 throw new Error(`Invalid document`);
             }
 
             for (const attr of childs.attributes) {
-                const attrModel = model.content.findAttribute(attr.localName);
+                const attrModel = model.content.findAttributeByLocalName(attr.localName);
                 if (attrModel) {
                     Reflect.set(obj, attrModel.name, attr.value);
                 }
@@ -397,7 +392,7 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
 
             XmlDomToObjMapper.fillObj(elements, obj, contentSteps[0]);
 
-            console.warn(obj);
+            // console.warn(obj);
             return obj;
         } else {
             throw new Error('Invalid mapping attept');
@@ -406,29 +401,70 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
 
     visitXmlAttribute(model: m.XmlAttributeModel, arg: XmlDomToObjCtx): XmlDomToObjCtx[] { throw new Error("Method not implemented."); }
 }
-/*
-class ObjToDomMapper implements m.IXmlContentModelVisitor {
 
-    visitXmlElement(model: m.XmlElementModel) {
-        throw new Error("Method not implemented.");
+class XmlObjToDomCtx {
+    private constructor(
+        public parent: XmlObjToDomCtx|null,
+        public element: Element,
+        public key: string,
+        public obj: any
+    ){
     }
-    visitXmlAnyElement(model: m.XmlElementAnyModel) {
-        throw new Error("Method not implemented.");
+
+    public enter(element: Element, key: string, obj: any) : XmlObjToDomCtx {
+        return new XmlObjToDomCtx(this, element, key, obj);
     }
-    visitXmlAllGroup(model: m.XmlElementAllGroupModel) {
-        throw new Error("Method not implemented.");
-    }
-    visitXmlSequenceGroup(model: m.XmlElementSequenceGroupModel) {
-        throw new Error("Method not implemented.");
-    }
-    visitXmlChoiceGroup(model: m.XmlElementChoiceGroupModel) {
-        throw new Error("Method not implemented.");
-    }
-    visitXmlAttribute(model: m.XmlAttributeModel) {
-        throw new Error("Method not implemented.");
+
+    public static initial(element: Element, obj: any) : XmlObjToDomCtx {
+        return new XmlObjToDomCtx(null, element, '', obj);
     }
 }
-*/
+
+class XmlObjToDomMapper implements m.IXmlContentPartModelVisitor<XmlObjToDomCtx, void> {
+    
+    private constructor() {
+    }
+
+    visitXmlElement(model: m.XmlElementModel, arg: XmlObjToDomCtx): void {
+        const element = arg.element.ownerDocument.createElementNS(arg.element.namespaceURI, model.name); // TODO consider namespace switching
+        arg.element.appendChild(element);
+        this.fillElement(model, arg.enter(element, model.name, Reflect.get(arg.obj, model.name)));
+    }
+    visitXmlAnyElement(model: m.XmlElementAnyModel, arg: XmlObjToDomCtx): void {
+        throw new Error("Method not implemented.");
+    }
+    visitXmlAllGroup(model: m.XmlElementAllGroupModel, arg: XmlObjToDomCtx): void {
+        throw new Error("Method not implemented.");
+    }
+    visitXmlSequenceGroup(model: m.XmlElementSequenceGroupModel, arg: XmlObjToDomCtx): void {
+        for (const part of model.parts) {
+            this.visit(part, arg);
+        }
+    }
+    visitXmlChoiceGroup(model: m.XmlElementChoiceGroupModel, arg: XmlObjToDomCtx): void {
+        throw new Error("Method not implemented.");
+    }
+
+    private visit(part: m.XmlElementPartModel, arg: XmlObjToDomCtx): void {
+        part.apply(this, arg);
+    }
+
+    private fillElement(model: m.XmlElementModel, arg: XmlObjToDomCtx) {
+        for (const attrModel of model.content.getAttributes()) {
+            const value = Reflect.get(arg.obj, attrModel.propertyName);
+            arg.element.setAttributeNS(attrModel.namespace, attrModel.name, '' + value); // TODO sophisticated simpleTypes
+        }
+        
+        this.visit(model.content.getSequence(), arg);
+    }
+
+    public static mapElement(node: Element, obj: any, model: m.XmlElementModel) {
+        new XmlObjToDomMapper().fillElement(model, XmlObjToDomCtx.initial(node, obj));
+    }
+
+    visitXmlAttribute(model: m.XmlAttributeModel, arg: XmlObjToDomCtx): void { throw new Error("Method not implemented."); }
+}
+
 //#endregion
 
 const nsCtxByType = new Map<string, Map<Function, m.XmlNamespaceModel>>();
@@ -459,7 +495,32 @@ const walkXmlStringImpl = (xml: string) : XmlNodeInterpreter => {
     return new XmlNodeInterpreter(dom.documentElement);
 };
 const serializeImpl = (root: any) : string => {
-    throw new Error('not implemented');
+    const typeInfo = findModelTypeInfoByObjType(root);
+    if (!typeInfo) {
+        throw new Error('Unknown XML model type ' + root.constructor.name); 
+    }
+
+    const nsModels = typeInfo.getRootSpecs()
+                             .map(s => ({ namespace: s.namespace ?? '', name: s.name ?? typeInfo.getName() }))
+                             .map(s => ({ rootSpec: s, nsModel: resolveModelForType(s.namespace, s.name, root.constructor) }));
+    if (nsModels.length !== 1) {
+        throw new Error('Unknown root element of type ' + root.constructor.name); 
+    }
+    
+    const nsModel = nsModels[0];
+
+    const elementModel = nsModel.nsModel.findRootElement(nsModel.rootSpec.name);
+    if (!elementModel) {
+        throw new Error('Unknown root element ' + nsModel.rootSpec.name); 
+    }
+
+    var doc = document.implementation.createDocument(nsModel.nsModel.namespace, nsModel.rootSpec.name);
+    
+    XmlObjToDomMapper.mapElement(doc.documentElement, root, elementModel);
+
+    const writer = new XMLSerializer();
+    const xmlText = writer.serializeToString(doc);
+    return xmlText;
 };
 // deserialize: <T, C extends { new (): T }> (xml: string, ...types: C[]) : T => {
 const deserializeImpl = <T> (xml: string, ...type: ICtor<T>[]) : T => {
@@ -471,7 +532,7 @@ const deserializeImpl = <T> (xml: string, ...type: ICtor<T>[]) : T => {
     // const root = mapping.instantiate(rootElement);
     const typeInfo = findModelTypeInfoByType(type[0]); // TODO other types probing
     if (!typeInfo) {
-        throw new Error('Unknown model type ' + type[0]); 
+        throw new Error('Unknown XML model type ' + type[0]); 
     }
     const root = typeInfo.createInstance();
 

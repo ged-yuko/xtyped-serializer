@@ -208,7 +208,7 @@ export function XmlEnumerationValues<E extends Record<Extract<keyof E, any>, any
             console.warn(v);
         }
 
-        console.error('TODO: simpletype - enumerations');
+        throw new Error('TODO: simpletype - enumerations'); // TODO: @XmlEnumerationValues
         // return ret;
     }
 }
@@ -216,19 +216,19 @@ export function XmlEnumerationValues<E extends Record<Extract<keyof E, any>, any
 export function XmlAttributesGroup(params?: { name?: string, namespace?: string }) {
     return function (constructor: Function) : void {
         // ...
-        console.error('TODO: XmlAttributeGroup');
+        throw new Error('TODO: XmlAttributeGroup'); // TODO: @XmlAttributeGroup
     }
 }
 export function XmlAttributesGroupRef(groupType: ICtor<any>) {
     return function(target: any, propertyKey: string) : void{
         // ...
-        console.error('TODO: XmlAttributeGroupRef');
+        throw new Error('TODO: XmlAttributeGroupRef'); // TODO: @XmlAttributeGroupRef
     }
 }
 export function XmlElementsGroup(params?: { name?: string, namespace?: string }) {
     return function (constructor: Function) : void {
         // ...
-        console.error('TODO: XmlElementsGroup');
+        throw new Error('TODO: XmlElementsGroup'); // TODO: @XmlElementsGroup
     }
 }
 
@@ -236,7 +236,7 @@ export function XmlElementsGroup(params?: { name?: string, namespace?: string })
 export function XmlArray(params: {order: number}) {
     return function(target: any, propertyKey: string) : void {
         // getModelTypeInfoByCtor(target.constructor).registerPropertyAsElement(propertyKey, order, elementName, ns);
-        console.error('TODO: XmlArray');
+        throw new Error('TODO: XmlArray'); // TODO: @XmlArray
     }
 }
 /*

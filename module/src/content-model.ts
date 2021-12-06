@@ -93,6 +93,7 @@ export abstract class XmlContentPartModel {
 export class XmlAttributeModel extends XmlContentPartModel {
     
     public constructor(
+        public propertyName: string,
         public name: string,
         public namespace: string
     ) {
@@ -348,24 +349,27 @@ export class XmlElementContentModel {
     public constructor() {
     }
 
-    public get fsm() {
+    public getAttributes() : ReadonlyArray<XmlAttributeModel> {
+        return Array.from(this._attrs.values());
+    }
+
+    public getFsm() {
         if (!this._fsm) {
             this._fsm = XmlElementContentFsmBuilder.buildFsm(this._sequence);
         }
         return this._fsm;
     }
 
-    public get sequence() {
+    public getSequence() {
         return this._sequence;
     }
 
-    public findAttribute(name: string) : XmlAttributeModel|undefined {
+    public findAttributeByLocalName(name: string) : XmlAttributeModel|undefined {
         return this._attrs.get(name);
     }
 
-    public registerAttribute(name: string) : XmlAttributeModel {
-        console.warn('TODO: namespace');
-        const attr = new XmlAttributeModel(name, ''); 
+    public registerAttribute(propertyName: string, name: string) : XmlAttributeModel {
+        const attr = new XmlAttributeModel(propertyName, name, ''); // TODO: attribute namespace
         this._attrs.set(name, attr);
         return attr;
     }
@@ -411,7 +415,7 @@ export class XmlNamespaceModel {
     private static populateElementModel(el: XmlElementModel, typeInfo: XmlModelTypeInfo) : void {
         for (const prop of Array.from(typeInfo.getProps())) {
             for (const attr of Array.from(prop.getAttributes())) {
-                el.content.registerAttribute(attr.name ?? prop.name);
+                el.content.registerAttribute(prop.name, attr.name ?? prop.name);
             }
 
             // type XmlElementParamsWithOrder = Required<Pick<IXmlElementParameters, 'order'>> & Omit<IXmlElementParameters, 'order'>;
@@ -420,7 +424,7 @@ export class XmlNamespaceModel {
                               .filter((x): x is IXmlElementParameters & { order: number} => !!x.order)
                               .sort((a, b) => a.order - b.order);
             for (const er of elts) {
-                const emodel = el.content.sequence.addElement(er.name ?? prop.name);
+                const emodel = el.content.getSequence().addElement(er.name ?? prop.name);
                 if (er.type?.ctor) {
                     const typeRef = er.type.ctor();
                     emodel.setTypeCtor(typeRef);
