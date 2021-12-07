@@ -44,7 +44,7 @@ const simpleXmlModel = makeInstanceOf(Root, {
 });
 
 test('POC deserialize', () => {
-   expect(xs.deserialize(simpleXmlText, Root)).toEqual(simpleXmlModel);
+    expect(xs.deserialize(simpleXmlText, Root)).toEqual(simpleXmlModel);
 });
 test('POC serialize', () => {
     expect(xs.deserialize(xs.serialize(simpleXmlModel), Root)).toEqual(simpleXmlModel);

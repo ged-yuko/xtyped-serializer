@@ -1,6 +1,6 @@
 import { ICtor, XmlModelItemReference, XmlModelTypeInfo, XmlModelPropertyInfo, findModelTypeInfoByType, MyConstructor, findModelTypeInfoByObjType, IXmlModelItemReference } from "./annotations";
 import * as m from "./content-model";
-import { ImmStack, collectTree } from "./util";
+import { ImmStack, collectTree } from "./utils";
 
 const untype = ((x:any):any => x);
 

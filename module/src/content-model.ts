@@ -1,5 +1,5 @@
 import { findModelTypeInfoByType, XmlModelItemReference, IXmlElementParameters, XmlModelTypeInfo } from "./annotations";
-import { isArrayInstanceOf } from "./util";
+import { isArrayInstanceOf } from "./utils";
 
 export interface IXmlValueModelVisitor<T, TRet> {
     visitNumberValue(arg0: XmlNumberValueModel, arg: T): TRet;
