@@ -33,7 +33,8 @@ XsdSchema-aware XML serializer for TypeScript
 - [ ] content model caching
 - [ ] package build process review (namespacing, components and such)
 - [ ] classes generator
-  - [ ] schema text   qreading and generated source text writing
+  - [ ] schema text reading and generated source text writing
   - [ ] adaptive schema location resolution
   - [ ] output source file per namespace
   - [ ] as executable task
+  - [ ] vscode integration (see https://github.com/microsoft/TypeScript/wiki/Using-the-Compiler-API)

@@ -1,9 +1,8 @@
-import { XsdSchema } from 'xsdschema2'
-import * as s from 'annotations'
-import xs from 'serializer'
-import * as ts from 'ts-dom'
-import { foreachSeparating, IndentedStringBuilder } from 'utils'
-import { XmlNamespaceModel } from 'content-model'
+import { XsdSchema } from './xsdschema2'
+import xs from './serializer'
+import * as ts from './ts-dom'
+import { foreachSeparating, IndentedStringBuilder } from './utils'
+import { XmlNamespaceModel } from './content-model'
 
 
 class SourceTextBuilder implements ts.ITsSourceUnitMemberVisitor<IndentedStringBuilder, void>,
