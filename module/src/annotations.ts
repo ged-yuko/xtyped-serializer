@@ -231,6 +231,12 @@ export function XmlElementsGroup(params?: { name?: string, namespace?: string })
         throw new Error('TODO: XmlElementsGroup'); // TODO: @XmlElementsGroup
     }
 }
+export function XmlElementsGroupRef(params?: { name?: string, namespace?: string }) {
+    return function(target: any, propertyKey: string) : void {
+        // ...
+        throw new Error('TODO: XmlElementsGroup'); // TODO: @XmlElementsGroup
+    }
+}
 
 
 export function XmlArray(params: {order: number}) {

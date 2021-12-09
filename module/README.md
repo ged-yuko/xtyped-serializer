@@ -37,4 +37,5 @@ XsdSchema-aware XML serializer for TypeScript
   - [ ] adaptive schema location resolution
   - [ ] output source file per namespace
   - [ ] as executable task
+    - [x] xtg using ts-node
   - [ ] vscode integration (see https://github.com/microsoft/TypeScript/wiki/Using-the-Compiler-API)
