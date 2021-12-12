@@ -1,4 +1,4 @@
-import { XmlRoot, XmlAttribute, XmlComplexType, XmlElement, IDefaultCtor, ICtor } from '../annotations';
+import { XmlRoot, XmlAttribute, XmlComplexType, XmlElement, DefaultCtor } from '../annotations';
 import xs from '../serializer'
 import g from '../mapping-generator'
 import * as ts from 'typescript'
@@ -64,7 +64,7 @@ class Root {
     part2: Y;
 }
 
-function makeInstanceOf<T>(ctor: ICtor<T>, data: Required<T>) : T {
+function makeInstanceOf<T>(ctor: DefaultCtor, data: Required<T>) : T {
     return Object.assign(new ctor(), data);
 }
 const simpleXmlModel = makeInstanceOf(Root, {
@@ -84,6 +84,7 @@ function parseAnnotatedModelText(fname: string, text: string): XmlNamespaceModel
         ['m1', 'm2'].map(s => ts.factory.createMethodSignature(undefined, s, undefined, undefined, [ts.factory.createParameterDeclaration(undefined, undefined, undefined, 'x')], undefined))
     );
     
+    // TODO reimplement SourceTextBuilder with this approach
     const resultFile = ts.createSourceFile("someFileName.ts", "", ts.ScriptTarget.Latest, /*setParentNodes*/ false, ts.ScriptKind.TS);
     const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed });
     const result = printer.printNode(ts.EmitHint.Unspecified, ifa, resultFile);
@@ -98,11 +99,13 @@ test('POC deserialize', () => {
 test('POC serialize', () => {
     expect(xs.deserialize(xs.serialize(simpleXmlModel), Root)).toEqual(simpleXmlModel);
 });
-test('POC generator', () => {
-    const fname = 'test.xsd';
-    // const text = fs.readFileSync(fname, 'utf8');
-    // const tsModelText = g.generate(simpleXsdText);
-    const generatedModel = parseAnnotatedModelText(fname, '');
-    // const givenSimpleModel = XmlNamespaceModel.makeForType(Root);
-    // expect(generatedModel).toEqual(givenSimpleModel);
-});
+
+// TODO accomplish generator proof of concept after xsdschema model
+// test('POC generator', () => {
+//     const fname = 'test.xsd';
+//     const text = fs.readFileSync(fname, 'utf8');
+//     const tsModelText = g.generate(simpleXsdText);
+//     const generatedModel = parseAnnotatedModelText(fname, '');
+//     const givenSimpleModel = XmlNamespaceModel.makeForType(Root);
+//     expect(generatedModel).toEqual(givenSimpleModel);
+// });

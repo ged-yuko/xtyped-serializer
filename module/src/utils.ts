@@ -41,11 +41,11 @@ export function collectTree<T>(root: T, childs: (n: T) => T[], format: (n: T) =>
     return lines.join('\n');
 }
 
-export class QueueItem<T> {
+class QueueItem<T> {
     public next: QueueItem<T>|null = null;
 
     public constructor(
-        public data: T
+        public readonly data: T
     ){
     }
 }

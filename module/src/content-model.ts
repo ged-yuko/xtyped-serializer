@@ -1,4 +1,4 @@
-import { findModelTypeInfoByType, XmlModelItemReference, IXmlElementParameters, XmlModelTypeInfo } from "./annotations";
+import { findModelTypeInfoByType, XmlModelItemReference, IXmlElementParameters, XmlModelTypeInfo, DefaultCtor } from "./annotations";
 import { isArrayInstanceOf } from "./utils";
 
 export interface IXmlValueModelVisitor<T, TRet> {
@@ -17,9 +17,9 @@ export abstract class XmlValueModel {
 
 export class XmlStringValueModel extends XmlValueModel{
     public constructor(
-        public pattern?: string,
-        public maxLength?: number,
-        public minLength?: number
+        public readonly pattern?: string,
+        public readonly maxLength?: number,
+        public readonly minLength?: number
     ){
         super();
     }
@@ -29,9 +29,9 @@ export class XmlStringValueModel extends XmlValueModel{
 
 export class XmlNumberValueModel extends XmlValueModel {
     public constructor(
-        public isInteger?: boolean,
-        public minValue?: number,
-        public maxValue?: number
+        public readonly isInteger?: boolean,
+        public readonly minValue?: number,
+        public readonly maxValue?: number
     ) {
         super();
     }
@@ -93,9 +93,9 @@ export abstract class XmlContentPartModel {
 export class XmlAttributeModel extends XmlContentPartModel {
     
     public constructor(
-        public propertyName: string,
-        public name: string,
-        public namespace: string
+        public readonly propertyName: string,
+        public readonly name: string,
+        public readonly namespace: string
     ) {
         super();
     }
@@ -161,8 +161,8 @@ export class XmlElementContentFsmNode {
     private _next = new Set<XmlElementContentFsmNode>();
 
     public constructor(
-        public id: number,
-        private part: XmlElementPartModel
+        public readonly id: number,
+        private readonly part: XmlElementPartModel
     ) {
     }
 
@@ -180,7 +180,7 @@ export class XmlElementContentFsmNode {
 export class XmlElementContentFsmConsumeNode extends XmlElementContentFsmNode {
     public constructor(
         id: number,
-        public element: XmlElementModel
+        public readonly element: XmlElementModel
     ) {
         super(id, element);
     }
@@ -191,7 +191,7 @@ export class XmlElementContentFsmConsumeAllNode extends XmlElementContentFsmNode
     public constructor(
         id: number,
         part: XmlElementPartModel,
-        public elements: XmlElementModel[]
+        public readonly elements: XmlElementModel[]
     ) {
         super(id, part);
     }
@@ -209,8 +209,8 @@ export type ContentFsmOperation = {op:ContentFsmOpKind.Push}
 export class XmlElementContentFsmCountControlNode extends XmlElementContentFsmNode {
     public constructor(
         id: number, part: XmlElementPartModel,
-        public counterId: number,
-        public operation: ContentFsmOperation
+        public readonly counterId: number,
+        public readonly operation: ContentFsmOperation
     ) {
         super(id, part);
     }
@@ -219,20 +219,22 @@ export class XmlElementContentFsmCountControlNode extends XmlElementContentFsmNo
 }
 class ContentFsmFragment {
     public constructor(
-        public from: XmlElementContentFsmNode,
-        public to: XmlElementContentFsmNode
+        public readonly from: XmlElementContentFsmNode,
+        public readonly to: XmlElementContentFsmNode
     ) {
     }
 }
 export class XmlElementContentFsm {
     public constructor(
-        private nodes: XmlElementContentFsmNode[],
-        private fragment: ContentFsmFragment
+        private readonly _nodes: XmlElementContentFsmNode[],
+        private readonly _fragment: ContentFsmFragment
     ) {
     }
 
-    public get start() { return this.fragment.from; }
-    public get end() { return this.fragment.to; }
+    public get nodes() : ReadonlyArray<XmlElementContentFsmNode> { return this._nodes; }
+
+    public get start() : XmlElementContentFsmNode { return this._fragment.from; }
+    public get end() : XmlElementContentFsmNode { return this._fragment.to; }
 }
 
 class XmlElementContentFsmBuilder implements IXmlContentPartModelVisitor<any, ContentFsmFragment> {
@@ -377,10 +379,10 @@ export class XmlElementContentModel {
 
 export class XmlElementModel extends XmlElementPartModel {
     private _content = new XmlElementContentModel();
-    private _typeCtor: Function;
+    private _typeCtor: DefaultCtor;
 
     public constructor(
-        public name: string
+        public readonly name: string
     ) {
         super();
     }
@@ -390,7 +392,7 @@ export class XmlElementModel extends XmlElementPartModel {
 
     protected applyImpl<T, TRet>(visitor: IXmlContentPartModelVisitor<T, TRet>, arg: T): TRet { return visitor.visitXmlElement(this, arg); }
 
-    public setTypeCtor(ctor: Function) { this._typeCtor = ctor; }
+    public setTypeCtor(ctor: DefaultCtor) { this._typeCtor = ctor; }
 }
 
 
@@ -398,7 +400,7 @@ export class XmlNamespaceModel {
     private _rootElementsByName = new Map<string, XmlElementModel>();
 
     public constructor(
-        public namespace: string
+        public readonly namespace: string
     ) {
     }
 
@@ -441,7 +443,7 @@ export class XmlNamespaceModel {
         }
     }
 
-    public static makeForType(type: Function, ns?: string) : XmlNamespaceModel {
+    public static makeForType(type: DefaultCtor, ns?: string) : XmlNamespaceModel {
         const model = new XmlNamespaceModel(ns ?? '');
         const typeInfo = findModelTypeInfoByType(type);
         // typeInfo.isMatchRootElement(new XmlModelItemReference());

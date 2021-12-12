@@ -1,4 +1,4 @@
-import { XmlComplexType, XmlRoot, XmlAttribute, XmlSimpleType, XmlEnumerationValues, XmlElement, XmlArray, XmlElementsGroup, XmlElementsGroupRef } from "./annotations";
+import { XmlComplexType, XmlRoot, XmlAttribute, XmlSimpleType, XmlEnumerationValues, XmlElement, XmlChoice, XmlElementsGroup, XmlElementsGroupEntry } from "./annotations";
 
 
 //   <xs:group name="redefinable">
@@ -93,7 +93,7 @@ export class XsdLocalComplexType {
     @XmlElement({order: 2})
     @XmlElement({name: 'simpleContent'})
     @XmlElement({name: 'complexContent'})
-    @XmlElementsGroupRef({name: 'complexTypeModel'})
+    @XmlElementsGroupEntry({name: 'complexTypeModel'})
     model: XsdComplexTypeModel;
 
     @XmlAttribute()
@@ -132,15 +132,15 @@ export interface IXsdTopLevelElementLocalType {
 @XmlComplexType({name: 'topLevelElement'})
 export class XsdTopLevelElement implements IXsdSchemaTop {
 
-    @XmlElement({order: 0, name: 'annotation', type: { ctor: () => XsdAnnotation }})
+    @XmlElement({order: 1, name: 'annotation', type: { ctor: () => XsdAnnotation }})
     annotation: XsdAnnotation;
 
-    @XmlElement({order: 1})
+    @XmlElement({order: 2})
     @XmlElement({name: 'simpleType', type: { ctor: () => XsdLocalComplexType }})
     @XmlElement({name: 'complexType'})
     type: IXsdTopLevelElementLocalType;
 
-    @XmlArray({order: 2})
+    @XmlChoice({order: 3})
     @XmlElement({name: 'unique'})
     @XmlElement({name: 'key'})
     @XmlElement({name: 'keyref'})
@@ -148,8 +148,8 @@ export class XsdTopLevelElement implements IXsdSchemaTop {
 
     // TODO XsdTopLevelElement dependencies
 
-    @XmlAttribute()
-    type: string;
+    @XmlAttribute({name: 'type'})
+    typeName: string;
     @XmlAttribute()
     substitutionGroup: string;
     @XmlAttribute()
@@ -244,14 +244,14 @@ export class XsdSchema { // extends XsdOpenAttrs {
     @XmlAttribute()
     lang: string;
 
-    @XmlArray({order: 0})      
+    @XmlChoice({order: 1})      
     @XmlElement({name:'include'})
     @XmlElement({name:'import'})
     @XmlElement({name:'redefine'})
     @XmlElement({name:'annotation'})
     declarations = new Array<IXsdSchemaDeclaration>();
 
-    @XmlArray({order: 1})
+    @XmlChoice({order: 2})
     @XmlElement({name: 'annotation'})
     @XmlElement({name: 'element'})
     @XmlElement({name: 'attribute'})

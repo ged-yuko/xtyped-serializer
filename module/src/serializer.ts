@@ -1,4 +1,4 @@
-import { ICtor, XmlModelItemReference, XmlModelTypeInfo, XmlModelPropertyInfo, findModelTypeInfoByType, MyConstructor, findModelTypeInfoByObjType, IXmlModelItemReference } from "./annotations";
+import { XmlModelItemReference, XmlModelTypeInfo, XmlModelPropertyInfo, findModelTypeInfoByType, findModelTypeInfoByObjType, IXmlModelItemReference, DefaultCtor, CtorOf } from "./annotations";
 import * as m from "./content-model";
 import { ImmStack, collectTree } from "./utils";
 
@@ -112,7 +112,7 @@ class XmlElementMapping {
     }
 }
 
-const findRootMapping = <T> (e: Element, ...type: ICtor<T>[]) : XmlElementMapping|undefined => {    
+const findRootMapping = <T> (e: Element, ...type: DefaultCtor[]) : XmlElementMapping|undefined => {    
     const rootDesc = type.map(t => findModelTypeInfoByType(t))
                         .filter(t => t != undefined)
                         .find(t => t?.getRootSpecs()
@@ -272,11 +272,11 @@ class XmlDomToObjMapper {
 */
 class XmlDomToObjCtx {
     private constructor(
-        public parent: XmlDomToObjCtx|null,
-        public childs: XmlDomToObjCtx[],
-        public part: m.XmlElementPartModel,
-        public start: number,
-        public pos: number
+        public readonly parent: XmlDomToObjCtx|null,
+        public readonly childs: XmlDomToObjCtx[],
+        public readonly part: m.XmlElementPartModel,
+        public readonly start: number,
+        public readonly pos: number
     ){
     }
 
@@ -355,7 +355,7 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
     }
 
     private static _objectFillers = new Map<Function, (ee: Element[], o: any, t: XmlDomToObjCtx) => void>([
-        [m.XmlElementModel, (ee, o, t) => Reflect.set(o, (<m.XmlElementModel>t.part).name, XmlDomToObjMapper.mapElement(ee[t.start], new (<MyConstructor>(<m.XmlElementModel>t.part).typeCtor)(), <any>t.part))],
+        [m.XmlElementModel, (ee, o, t) => Reflect.set(o, (<m.XmlElementModel>t.part).name, XmlDomToObjMapper.mapElement(ee[t.start], new ((<m.XmlElementModel>t.part).typeCtor)(), <any>t.part))],
         [m.XmlElementSequenceGroupModel, (ee, o, t) => XmlDomToObjMapper.fillObj(ee, o, t)]
     ]);
 
@@ -404,10 +404,10 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
 
 class XmlObjToDomCtx {
     private constructor(
-        public parent: XmlObjToDomCtx|null,
-        public element: Element,
-        public key: string,
-        public obj: any
+        public readonly parent: XmlObjToDomCtx|null,
+        public readonly element: Element,
+        public readonly key: string,
+        public readonly  obj: any
     ){
     }
 
@@ -467,12 +467,12 @@ class XmlObjToDomMapper implements m.IXmlContentPartModelVisitor<XmlObjToDomCtx,
 
 //#endregion
 
-const nsCtxByType = new Map<string, Map<Function, m.XmlNamespaceModel>>();
+const nsCtxByType = new Map<string, Map<DefaultCtor, m.XmlNamespaceModel>>();
 
-const resolveModelForType = (ns: string, elname: string, type: Function) => {
+const resolveModelForType = (ns: string, elname: string, type: DefaultCtor) => {
     let  nsByType = nsCtxByType.get(ns);
     if (!nsByType) {
-        nsByType = new Map<Function, m.XmlNamespaceModel>();
+        nsByType = new Map<DefaultCtor, m.XmlNamespaceModel>();
         nsCtxByType.set(ns, nsByType);
     } 
 
@@ -523,7 +523,7 @@ const serializeImpl = (root: any) : string => {
     return xmlText;
 };
 // deserialize: <T, C extends { new (): T }> (xml: string, ...types: C[]) : T => {
-const deserializeImpl = <T> (xml: string, ...type: ICtor<T>[]) : T => {
+const deserializeImpl = <T> (xml: string, ...type: CtorOf<T>[]) : T => {
     const parser = new DOMParser();
     const dom = parser.parseFromString(xml, "application/xml");
     const rootElement = dom.documentElement;
@@ -532,7 +532,7 @@ const deserializeImpl = <T> (xml: string, ...type: ICtor<T>[]) : T => {
     // const root = mapping.instantiate(rootElement);
     const typeInfo = findModelTypeInfoByType(type[0]); // TODO other types probing
     if (!typeInfo) {
-        throw new Error('Unknown XML model type ' + type[0]); 
+        throw new Error('Unknown XML model type ' + type[0].name); 
     }
     const root = typeInfo.createInstance();
 
