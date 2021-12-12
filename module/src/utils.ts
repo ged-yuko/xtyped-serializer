@@ -1,4 +1,13 @@
 
+export function foreachSeparating<T>(arr: T[], f: (x: T) => void, s: () => void): void{
+    if (arr.length > 0) {
+        f(arr[0]);
+        for (let i = 1; i < arr.length; i++) {
+            s();
+            f(arr[i]);
+        }
+    }
+}
 
 export function isArrayInstanceOf<T>(arr: any, Class: new (...args: any[])=>T) : arr is Array<T> {
     if (Array.isArray(arr)) {
@@ -32,11 +41,11 @@ export function collectTree<T>(root: T, childs: (n: T) => T[], format: (n: T) =>
     return lines.join('\n');
 }
 
-export class QueueItem<T> {
+class QueueItem<T> {
     public next: QueueItem<T>|null = null;
 
     public constructor(
-        public data: T
+        public readonly data: T
     ){
     }
 }
@@ -109,4 +118,67 @@ export class ImmStack<T> {
     }
 
     public static empty<T>() { return new ImmStack<T>(null, null); }
+}
+
+export class IndentedStringBuilder {
+    private readonly _content = new Array<string>();
+
+    private readonly _defaultPrefix: string;
+    private readonly _prefix = new Array<string>();
+
+    private _lineStart: boolean;
+
+    public constructor(defaultPrefix?: string) {
+        this._defaultPrefix = defaultPrefix ?? '    ';
+        this._lineStart = true;
+    }
+
+    public clear(): void {
+        this._content.length = 0;
+        this._lineStart = true;
+    }
+
+    public append(str: string): IndentedStringBuilder {
+        this.appendPrefixInternal();
+        
+        this._content.push(str);
+        return this;
+    }
+
+    public appendLine(str?: string): IndentedStringBuilder {
+        this.appendPrefixInternal();
+
+        if (str) {
+            this._content.push(str);
+        }
+        this._content.push("\n");
+
+        this._lineStart = true;
+        return this;
+    }
+
+    private appendPrefixInternal(): void {
+        if (this._lineStart) {
+
+            for (const s of this._prefix) {
+                this._content.push(s);
+            }
+
+            this._lineStart = false;
+        }   
+    }
+
+    public push(prefix?: string): IndentedStringBuilder {
+        this._prefix.push(prefix ?? this._defaultPrefix);
+        return this;
+    }
+
+    public pop(): IndentedStringBuilder {
+        this._prefix.pop();
+        return this;
+    }
+
+    public stringify(): string {
+        return this._content.join('');
+    }
 }
