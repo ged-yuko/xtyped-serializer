@@ -5,7 +5,7 @@ import * as ts from 'typescript'
 import * as fs from 'fs'
 import * as path from 'path'
 import { XmlNamespaceModel } from 'content-model';
-import { isArrayInstanceOf } from 'utils';
+import { isArrayInstanceOf, makeInstanceOf } from '../utils';
 
 const simpleXsdText = `
 <?xml version="1.0" encoding="utf-8" ?>
@@ -64,9 +64,6 @@ class Root {
     part2: Y;
 }
 
-function makeInstanceOf<T>(ctor: DefaultCtor, data: Required<T>) : T {
-    return Object.assign(new ctor(), data);
-}
 const simpleXmlModel = makeInstanceOf(Root, {
     attr1: 'A1',
     attr2: 'A2',

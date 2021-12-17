@@ -1,4 +1,4 @@
-import { XmlComplexType, XmlRoot, XmlAttribute, XmlSimpleType, XmlEnumerationValues, XmlElement, XmlChoice, XmlElementsGroup, XmlElementsGroupEntry, XmlAbstractComplexType, XmlAttributesGroup, XmlAttributesGroupEntry } from "./annotations";
+import { XmlComplexType, XmlRoot, XmlAttribute, XmlSimpleType, XmlEnumerationValues, XmlElement, XmlChoice, XmlElementsGroup, XmlElementsGroupEntry, XmlAbstractComplexType, XmlAttributesGroup, XmlAttributesGroupEntry, XmlNode, XmlNodeAssociationKind } from "./annotations";
 
 
 
@@ -8,8 +8,10 @@ import { XmlComplexType, XmlRoot, XmlAttribute, XmlSimpleType, XmlEnumerationVal
 //     </xs:sequence>
 //     <xs:anyAttribute processContents="lax"/>
 //   </xs:complexType>
-@XmlComplexType({name: 'anyType'})
+@XmlComplexType({name: 'anyType'})                                                              // ok
 export class XsdAnyType {  
+    @XmlNode(XmlNodeAssociationKind.Element)
+    rawNode: Element;
 }
 
 //   <xs:complexType name="openAttrs">
@@ -19,7 +21,7 @@ export class XsdAnyType {
 //       </xs:restriction>
 //     </xs:complexContent>
 //   </xs:complexType>
-@XmlComplexType({name: 'openAttrs'})
+@XmlComplexType({name: 'openAttrs'})                                                            // ok
 export class XsdOpenAttrs extends XsdAnyType {
 
 }
@@ -40,7 +42,7 @@ export class XsdOpenAttrs extends XsdAnyType {
 //       </xs:complexContent>
 //     </xs:complexType>
 //   </xs:element>
-@XmlComplexType({ name: 'annotation' })
+@XmlComplexType({ name: 'annotation' })                                                         // todo
 export class XsdAnnotation extends XsdOpenAttrs {
     // TODO XsdAnnotation
 }
@@ -55,8 +57,9 @@ export class XsdAnnotation extends XsdOpenAttrs {
 //       </xs:extension>
 //     </xs:complexContent>
 //   </xs:complexType>
-@XmlComplexType({name: 'annotated'})
+@XmlComplexType({name: 'annotated'})                                                            // ok
 export class XsdAnnotated extends XsdOpenAttrs {
+    
     @XmlAttribute() 
     id: string;
 }
@@ -65,19 +68,19 @@ export class XsdAnnotated extends XsdOpenAttrs {
 //     <xs:attribute name="minOccurs" type="xs:nonNegativeInteger" use="optional" default="1"/>
 //     <xs:attribute name="maxOccurs" type="xs:allNNI" use="optional" default="1"/>
 //   </xs:attributeGroup>
-@XmlAttributesGroup({ name: 'occurs' })                                             // ok
+@XmlAttributesGroup({ name: 'occurs' })                                                         // ok
 export class XsdOccursAttrGroup {
     @XmlAttribute({name: 'minOccurs'})
-    min: number = 1;
+    min?: number = 1;
     @XmlAttribute({name: 'maxOccurs'})
-    max: number = 1;
+    max?: number = 1;
 }
 
 //   <xs:attributeGroup name="defRef">
 //     <xs:attribute name="name" type="xs:NCName" vs:snippet="yes"/>
 //     <xs:attribute name="ref" type="xs:QName"/>
 //   </xs:attributeGroup>
-@XmlAttributesGroup({ name: 'defRef' })                                         // ok
+@XmlAttributesGroup({ name: 'defRef' })                                                         // ok
 export class XsdDefRefAttrGroup {
     @XmlAttribute()
     name: string;
@@ -195,7 +198,9 @@ export abstract class XsdSimpleType extends XsdAnnotated {                      
 //   </xs:complexType>
 @XmlComplexType({name: 'topLevelSimpleType'})                                   // deps
 export class XsdTopLevelSimpleType extends XsdSimpleType {
-    @XmlElement({order: 1, minOccurs: 0})
+    // TODO XsdTopLevelSimpleType
+
+    @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
 
     @XmlChoice()
@@ -230,9 +235,11 @@ export class XsdTopLevelSimpleType extends XsdSimpleType {
 //       </xs:restriction>
 //     </xs:complexContent>
 //   </xs:complexType>
-@XmlComplexType({name: 'topLevelComplexType'})                                      // deps
+@XmlComplexType({name: 'topLevelComplexType'})                                          // deps
 export class XsdLocalSimpleType extends XsdSimpleType {
-    @XmlElement({order: 1, minOccurs: 0})
+    // TODO XsdLocalSimpleType
+
+    @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
 
     @XmlChoice()
@@ -250,7 +257,7 @@ export class XsdLocalSimpleType extends XsdSimpleType {
 //       <xs:element ref="xs:keyref"/>
 //     </xs:choice>
 //   </xs:group>
-export interface IXsdIdentityConstraint {                                           // ok
+export interface IXsdIdentityConstraint {                                               // ok
     apply<T, TRet>(visitor: IXsdIdentityConstraintVisitor<T, TRet>, arg: T): TRet;
 }
 export interface IXsdIdentityConstraintVisitor<T, TRet> {
@@ -436,7 +443,7 @@ export interface IXsdNestedParticle {
 //     </xs:choice>
 //   </xs:group>
 export interface IXsdParticle {
-    // TODO particle
+    // TODO IXsdParticle
 }
 
 //   <xs:complexType name="attribute">
@@ -462,11 +469,33 @@ export interface IXsdParticle {
 //       </xs:extension>
 //     </xs:complexContent>
 //   </xs:complexType>
-@XmlComplexType({name: 'attribute'})
+@XmlComplexType({name: 'attribute'})                                                            // ok
 export class XsdAttribute extends XsdAnnotated {
+    @XmlElement({order: 1, name: 'annotation', minOccurs: 0, type: {ctor: () => XsdAnnotation}})
+    annotation: XsdAnnotation;
+
+    @XmlElement({order: 2, name: 'simpleType', minOccurs: 0, type: {ctor: () => XsdLocalSimpleType}})
+    simpleType?: XsdLocalSimpleType;
 }
 export class XsdAttributeImpl extends XsdAttribute implements IXsdAttrsDecls {
-    // TODO XsdAttributeImpl
+
+    @XmlAttributesGroupEntry({ctor: () => XsdDefRefAttrGroup})
+    defRef: XsdDefRefAttrGroup;
+
+    @XmlAttribute()
+    type?: string;
+
+    @XmlAttribute()
+    use?: string;
+
+    @XmlAttribute()
+    default?: string;
+
+    @XmlAttribute()
+    fixed: string;
+
+    @XmlAttribute()
+    form?: XsdFormChoice;
 }
 
 //   <xs:element name="attribute" type="xs:topLevelAttribute" id="attribute">
@@ -490,8 +519,77 @@ export class XsdAttributeImpl extends XsdAttribute implements IXsdAttrsDecls {
 //       </xs:restriction>
 //     </xs:complexContent>
 //   </xs:complexType>
+@XmlComplexType({name: 'topLevelAttribute'})                                                    // ok
 export class XsdTopLevelAttribute extends XsdAttribute {
-    // TODO XsdTopLevelAttribute
+    
+    @XmlAttribute()
+    name: string;
+}
+
+//   <xs:complexType name="attributeGroup" abstract="true">
+//     <xs:complexContent>
+//       <xs:extension base="xs:annotated">
+//         <xs:group ref="xs:attrDecls"/>
+//         <xs:attributeGroup ref="xs:defRef"/>
+//       </xs:extension>
+//     </xs:complexContent>
+//   </xs:complexType>
+@XmlAbstractComplexType({name: 'attributeGroup'})                                               // ok
+export abstract class XsdAttributeGroup extends XsdAnnotated {
+}
+
+//   <xs:element name="attributeGroup" type="xs:namedAttributeGroup" id="attributeGroup">
+//     <xs:annotation>
+//       <xs:documentation source="http://www.w3.org/TR/xmlschema-1/#element-attributeGroup"/>
+//     </xs:annotation>
+//   </xs:element>
+//
+//   <xs:complexType name="namedAttributeGroup">
+//     <xs:complexContent>
+//       <xs:restriction base="xs:attributeGroup">
+//         <xs:sequence>
+//           <xs:element ref="xs:annotation" minOccurs="0"/>
+//           <xs:group ref="xs:attrDecls"/>
+//         </xs:sequence>
+//         <xs:attribute name="name" use="required" type="xs:NCName"/>
+//         <xs:attribute name="ref" use="prohibited"/>
+//         <xs:anyAttribute namespace="##other" processContents="lax"/>
+//       </xs:restriction>
+//     </xs:complexContent>
+//   </xs:complexType>
+@XmlComplexType({name: 'namedAttributeGroup'})                                                 // ok
+export class XsdNamedAttributeGroup extends XsdAttributeGroup {
+    
+    @XmlElement({order: 1, name: 'annotation', type: { ctor: () => XsdAnnotation }, minOccurs: 0})
+    annotation: XsdAnnotation;
+
+    @XmlElementsGroupEntry({order: 2, ctor: () => XsdAttrDecls})
+    attrDecls: XsdAttrDecls;
+
+    @XmlAttribute()
+    name: string;
+}
+
+//   <xs:complexType name="attributeGroupRef">
+//     <xs:complexContent>
+//       <xs:restriction base="xs:attributeGroup">
+//         <xs:sequence>
+//           <xs:element ref="xs:annotation" minOccurs="0"/>
+//         </xs:sequence>
+//         <xs:attribute name="ref" use="required" type="xs:QName"/>
+//         <xs:attribute name="name" use="prohibited"/>
+//         <xs:anyAttribute namespace="##other" processContents="lax"/>
+//       </xs:restriction>
+//     </xs:complexContent>
+//   </xs:complexType>
+@XmlComplexType({name: 'attributeGroupRef'})                                                    // ok
+export class XsdAttributeGroupRef extends XsdAttributeGroup {
+    
+    @XmlElement({order: 1, name: 'annotation', type: { ctor: () => XsdAnnotation }, minOccurs: 0})
+    annotation: XsdAnnotation;
+
+    @XmlAttribute()
+    ref: string;
 }
 
 //   <xs:group name="attrDecls">
@@ -513,7 +611,7 @@ export class XsdAttrDecls {
     @XmlElement({name: 'attributeGroup', type: { ctor: () => XsdAttributeGroupRef }})
     decls = new Array<IXsdAttrsDecls>();
 
-    @XmlElement({name: 'anyAttribute', minOccurs: 0, type: { ctor: () => XsdAnyAttribute }})
+    @XmlElement({order: 2, name: 'anyAttribute', minOccurs: 0, type: { ctor: () => XsdAnyAttribute }})
     anyAttribute: XsdAnyAttribute;
 }
 @XmlComplexType({name: 'anyAttribute'})
@@ -529,7 +627,7 @@ export class XsdAnyAttribute {
 //       </xs:extension>
 //     </xs:complexContent>
 //   </xs:complexType>
-@XmlAbstractComplexType({name: 'group'})
+@XmlAbstractComplexType({name: 'group'})                                                    // ok
 export abstract class XsdGroup extends XsdAnnotated {
 }
 
@@ -548,7 +646,7 @@ export abstract class XsdGroup extends XsdAnnotated {
 //       </xs:restriction>
 //     </xs:complexContent>
 //   </xs:complexType>
-@XmlComplexType({name: 'group'})
+@XmlComplexType({name: 'group'})                                                            // ok
 export class XsdRealGroup extends XsdGroup {
 }
 
@@ -630,6 +728,18 @@ export class XsdGroupRef extends XsdRealGroup {
     occurs: XsdOccursAttrGroup;
 }
 
+//   <xs:element name="choice" type="xs:explicitGroup" id="choice">
+//     <xs:annotation>
+//       <xs:documentation source="http://www.w3.org/TR/xmlschema-1/#element-choice"/>
+//     </xs:annotation>
+//   </xs:element>
+//
+//   <xs:element name="sequence" type="xs:explicitGroup" id="sequence">
+//     <xs:annotation>
+//       <xs:documentation source="http://www.w3.org/TR/xmlschema-1/#element-sequence"/>
+//     </xs:annotation>
+//   </xs:element>
+//
 //   <xs:complexType name="explicitGroup">
 //     <xs:complexContent>
 //       <xs:restriction base="xs:group">
@@ -698,7 +808,7 @@ export class XsdExplicitSequenceGroupImpl extends XsdExplicitGroupImpl {
 //       </xs:restriction>
 //     </xs:complexContent>
 //   </xs:complexType>
-@XmlComplexType({name: 'all'})
+@XmlComplexType({name: 'all'})                                                                          // ok
 export class XsdAll extends XsdExplicitGroup {
     @XmlElement({order: 1, name: 'annotation', minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
@@ -765,17 +875,17 @@ export class XsdRestrictionType extends XsdAnnotated {                          
 //       </xs:restriction>
 //     </xs:complexContent>
 //   </xs:complexType>
-export class XsdComplexRestrictionType extends XsdRestrictionType {                          // deps
-    @XmlElement({order: 1, minOccurs: 0})
+export class XsdComplexRestrictionType extends XsdRestrictionType {                          // ok
+    @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
-    @XmlChoice({order: 2})
+    @XmlChoice({order: 2, minOccurs: 0})
     @XmlElement({name: 'group', type: {ctor: () => XsdGroupRef}})
-    @XmlElement({name: 'all', type: {ctor: () => }})
-    @XmlElement({name: 'choice', type: {ctor: () => }})
-    @XmlElement({name: 'sequence', type: {ctor: () => }})
+    @XmlElement({name: 'all', type: {ctor: () => XsdAllImpl}})
+    @XmlElement({name: 'choice', type: {ctor: () => XsdExplicitChoiceGroupImpl}})
+    @XmlElement({name: 'sequence', type: {ctor: () => XsdExplicitSequenceGroupImpl}})
     particles: IXsdTypeDefParticle;
-    @XmlAttributesGroupEntry()
-    attrDecls: XsdAttrDecls
+    @XmlElementsGroupEntry({order: 3, ctor: () => XsdAttrDecls})
+    attrDecls: XsdAttrDecls;
     @XmlAttribute()
     base: string;
 }
@@ -791,10 +901,23 @@ export class XsdComplexRestrictionType extends XsdRestrictionType {             
 //       </xs:extension>
 //     </xs:complexContent>
 //   </xs:complexType>
-export class XsdExtensionType extends XsdAnnotated {                                            // working
+@XmlComplexType({name: 'extensionType'})
+export class XsdExtensionType extends XsdAnnotated {                                            // ok
     // TODO XsdExtensionType
 }
 export class XsdExtensionTypeImpl extends XsdExtensionType {
+    @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
+    annotation: XsdAnnotation;
+    @XmlChoice({order: 2, minOccurs: 0})
+    @XmlElement({name: 'group', type: {ctor: () => XsdGroupRef}})
+    @XmlElement({name: 'all', type: {ctor: () => XsdAllImpl}})
+    @XmlElement({name: 'choice', type: {ctor: () => XsdExplicitChoiceGroupImpl}})
+    @XmlElement({name: 'sequence', type: {ctor: () => XsdExplicitSequenceGroupImpl}})
+    particles: IXsdTypeDefParticle;
+    @XmlElementsGroupEntry({order: 3, ctor: () => XsdAttrDecls})
+    attrDecls: XsdAttrDecls;
+    @XmlAttribute()
+    base: string;
 }
 
 //   <xs:element name="complexContent" id="complexContent">
@@ -819,7 +942,7 @@ export interface IXsdComplexContent {
 @XmlComplexType({name: 'complexContent'})
 export class XsdComplexContent extends XsdAnnotated {                                           // ok
     
-    @XmlElement({order: 1, minOccurs: 0})
+    @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
     
     @XmlChoice({order: 2})
@@ -845,15 +968,15 @@ export class XsdComplexContent extends XsdAnnotated {                           
 //       </xs:restriction>
 //     </xs:complexContent>
 //   </xs:complexType>
-export class XsdSimpleRestrictionType extends XsdRestrictionType {                              // working
+export class XsdSimpleRestrictionType extends XsdRestrictionType {                              // TODO !!!!!!!!!!!!!!!working
 
-    @XmlElement({order: 1, minOccurs: 0})
+    @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
 
 //           <xs:choice minOccurs="0">
 //             <xs:group ref="xs:simpleRestrictionModel"/>
 //           </xs:choice>
-    model: IXsdSimpleRestrictionModel;
+    //model: IXsdSimpleRestrictionModel;
 
 //           <xs:group ref="xs:attrDecls"/>
 //         </xs:sequence>
@@ -872,7 +995,7 @@ export class XsdSimpleRestrictionType extends XsdRestrictionType {              
 //       </xs:restriction>
 //     </xs:complexContent>
 //   </xs:complexType>
-export class XsdSimpleExtensionType extends XsdExtensionType {                                  // working
+export class XsdSimpleExtensionType extends XsdExtensionType {                                  // TODO !!!!!!!!!!!!!!!working
     // TODO XsdSimpleExtensionType
 
     //         <xs:sequence>
@@ -903,7 +1026,7 @@ export interface IXsdSimpleContent {
 //   </xs:element>
 @XmlComplexType({name: 'simpleContent'})
 export class XsdSimpleContent extends XsdAnnotated {                                            // ok
-    @XmlElement({order: 1, minOccurs: 0})
+    @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
 
     @XmlChoice({order: 2})
@@ -924,7 +1047,7 @@ export class XsdSimpleContent extends XsdAnnotated {                            
 //   </xs:group>
 export interface IXsdComplexTypeModel {
 }
-@XmlElementsGroup()
+@XmlElementsGroup()                                                                             // TODO !!!!!!!!!!!!!!!working
 export class XsdImplicitComplexTypeModel implements IXsdComplexTypeModel {
     // TODO XsdImplicitComplexTypeModel
 }
@@ -960,7 +1083,7 @@ export class XsdComplexType extends XsdAnnotated {
 @XmlComplexType({name: 'topLevelComplexType'})                                              // deps
 export class XsdTopLevelComplexType extends XsdComplexType {
         
-    @XmlElement({order: 1})
+    @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
 
     @XmlChoice({order: 2})
@@ -999,7 +1122,7 @@ export class XsdTopLevelComplexType extends XsdComplexType {
 @XmlComplexType({name: 'localComplexType'})                                                 // deps
 export class XsdLocalComplexType extends XsdComplexType {
     
-    @XmlElement({order: 1})
+    @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
 
     @XmlChoice({order: 2})
@@ -1036,7 +1159,7 @@ export class XsdLocalComplexType extends XsdComplexType {
 //       </xs:extension>
 //     </xs:complexContent>
 //   </xs:complexType>
-@XmlAbstractComplexType({ name: 'element' })
+@XmlAbstractComplexType({ name: 'element' })                                                        // ok
 export abstract class XsdElement extends XsdAnnotated {
 }
 
@@ -1060,9 +1183,9 @@ export interface IXsdLocalType {
 //       </xs:restriction>
 //     </xs:complexContent>
 //   </xs:complexType>
-@XmlComplexType({name: 'localElement'})
+@XmlComplexType({name: 'localElement'})                                                                     // ok
 export class XsdLocalElement extends XsdElement {
-    @XmlElement({order: 1, minOccurs: 0})
+    @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
 
     @XmlChoice({order: 2, minOccurs: 0, maxOccurs: 1})
@@ -1158,13 +1281,13 @@ export interface IXsdTopLevelElementLocalType {
 //       </xs:restriction>
 //     </xs:complexContent>
 //   </xs:complexType>
-@XmlComplexType({name: 'topLevelElement'})
+@XmlComplexType({name: 'topLevelElement'})                                                      // ok
 export class XsdTopLevelElement extends XsdElement implements IXsdSchemaTop {
 
     @XmlElement({order: 1, name: 'annotation', type: { ctor: () => XsdAnnotation }, minOccurs: 0})
     annotation: XsdAnnotation;
 
-    @XmlElement({order: 2})
+    @XmlChoice({order: 2})
     @XmlElement({name: 'simpleType', type: { ctor: () => XsdLocalSimpleType }})
     @XmlElement({name: 'complexType', type: { ctor: () => XsdLocalComplexType }})
     type: IXsdTopLevelElementLocalType;
@@ -1174,8 +1297,6 @@ export class XsdTopLevelElement extends XsdElement implements IXsdSchemaTop {
     @XmlElement({name: 'key', type: {ctor: () => XsdKey}})
     @XmlElement({name: 'keyref', type: {ctor: () => XsdKeyRef}})
     identityConstraints = new Array<IXsdIdentityConstraint>();
-
-    // TODO XsdTopLevelElement dependencies
 
     @XmlAttribute({name: 'type'})
     typeName: string;
@@ -1197,8 +1318,6 @@ export class XsdTopLevelElement extends XsdElement implements IXsdSchemaTop {
     name: string;
 }
 
-
-
 //   <xs:simpleType name="formChoice" vs:nonbrowsable="true">
 //     <xs:restriction base="xs:NMTOKEN">
 //       <xs:enumeration value="qualified"/>
@@ -1209,12 +1328,11 @@ export enum XsdFormChoice {
     Qualified = 'qualified',
     Unqualified = 'unqualified'
 }
-@XmlSimpleType({name: 'formChoice'})
+@XmlSimpleType({name: 'formChoice'})                                                            // ok
 class XsdFormChoiceType {
     @XmlEnumerationValues(XsdFormChoice)
     enumeration: XsdFormChoice;
 }
-
 
 //   <xs:element name="schema" id="schema">
 //     <xs:annotation>
@@ -1252,9 +1370,8 @@ export interface IXsdSchemaDefinition extends IXsdSchemaTop {
 //         </xs:extension>
 //       </xs:complexContent>
 //     </xs:complexType>
-@XmlRoot({name: 'schema'})
-export class XsdSchema { // extends XsdOpenAttrs {
-    // TODO XsdSchema dependencies
+@XmlRoot({name: 'schema'})                                                                          // ok
+export class XsdSchema extends XsdOpenAttrs {
 
     @XmlAttribute()
     targetNamespace: string;
@@ -1273,22 +1390,24 @@ export class XsdSchema { // extends XsdOpenAttrs {
     @XmlAttribute()
     lang: string;
 
-    @XmlChoice({order: 1, minOccurs: 0, maxOccurs: "unbounded"})      
+    // TODO schema declarations
+
+    @XmlChoice({order: 1, minOccurs: 0, maxOccurs: 'unbounded'})      
     @XmlElement({name:'include'})
     @XmlElement({name:'import'})
     @XmlElement({name:'redefine'})
-    @XmlElement({name:'annotation'})
+    @XmlElement({name:'annotation',  type: {ctor: () => XsdAnnotation }})
     declarations = new Array<IXsdSchemaDeclaration>();
 
     @XmlChoice({order: 2, minOccurs: 0, maxOccurs: 'unbounded'})
     @XmlElement({name: 'annotation', type: {ctor: () => XsdAnnotation }})
-    @XmlElement({name: 'element'})
-    @XmlElement({name: 'attribute'})
+    @XmlElement({name: 'element', type: {ctor: () => XsdTopLevelElement }})
+    @XmlElement({name: 'attribute', type: {ctor: () => XsdTopLevelAttribute }})
     @XmlElement({name: 'notation'})
-    @XmlElement({name: 'complexType'})
-    @XmlElement({name: 'simpleType'})
-    @XmlElement({name: 'group'})
-    @XmlElement({name: 'attributeGroup'})
+    @XmlElement({name: 'complexType', type: {ctor: () => XsdTopLevelComplexType }})
+    @XmlElement({name: 'simpleType', type: {ctor: () => XsdTopLevelSimpleType }})
+    @XmlElement({name: 'group', type: {ctor: () =>  XsdNamedGroup }})
+    @XmlElement({name: 'attributeGroup', type: {ctor: () => XsdNamedAttributeGroup}})
     definitions = new Array<IXsdSchemaDefinition>();
 }
 //

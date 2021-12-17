@@ -76,6 +76,12 @@ export interface IXmlTextParameters {
 export interface IXmlIgnoreParameters {
 }
 
+export enum XmlNodeAssociationKind {
+    AnyNode,
+    Element,
+    Attribute,
+    Text
+}
 
 export class XmlModelItemReference {
     public constructor(
@@ -111,6 +117,7 @@ export class XmlModelPropertyInfo {
     private _choiceEntrySpec = new Array<IXmlChoiceParameters>();
     private _textEntrySpec = new Array<IXmlTextParameters>();
     private _ignoreSpec = new Array<IXmlIgnoreParameters>();
+    private _associateWithNode?: XmlNodeAssociationKind;
 
     public constructor(
         public readonly modelTypeInfo: XmlModelTypeInfo,
@@ -126,6 +133,7 @@ export class XmlModelPropertyInfo {
     public getChoiceEntries() : ReadonlyArray<IXmlChoiceParameters> { return this._choiceEntrySpec; }
     public getTextEntries() : ReadonlyArray<IXmlTextParameters> { return this._textEntrySpec; }
     public getIgnore() : ReadonlyArray<IXmlIgnoreParameters> { return this._ignoreSpec; }
+    public isConfiguredAsNode() : XmlNodeAssociationKind|undefined { return this._associateWithNode; }
 
     public registerEnumerationValues(entries: Map<string, any>) : void {
         this._enumerationValues.push(entries);
@@ -151,12 +159,30 @@ export class XmlModelPropertyInfo {
     public configureIgnored(params: IXmlIgnoreParameters) : void {
         this._ignoreSpec.push(params);
     }
+    public configureAsNode(nodeKind: XmlNodeAssociationKind) : void {
+        this._associateWithNode = nodeKind;
+    }
 }
 
 class XmlModelTypeCtorInfo {
+    private _base: Function;
+
     public constructor(
         public readonly ctor: Function
     ) {
+        this._base = XmlModelTypeCtorInfo.getBaseType(ctor);
+    }
+
+    private static getBaseType(ctor: Function) : Function {
+        // seems Object.getPrototypeOf(C)
+        //    or Object.getPrototypeOf(C.prototype).constructor
+        //    would be correct
+        return Object.getPrototypeOf(ctor.prototype)?.constructor;
+    }
+
+    public getBaseType() : Function|null {
+        const base = this._base;
+        return (base && (base !== {}.constructor)) ? base : null;
     }
     
     public createInstance() : any {
@@ -259,6 +285,9 @@ export class XmlModelTypeInfo {
     }
     public registerPropertyAsIgnored(propertyKey: string, params: IXmlIgnoreParameters) : void {
         this.getPropertyInfoByName(propertyKey).configureIgnored(params);
+    }
+    public registerPropertyAsNode(propertyKey: string, nodeKind: XmlNodeAssociationKind) : void {
+        this.getPropertyInfoByName(propertyKey).configureAsNode(nodeKind);
     }
 
     public createInstance() : any {
@@ -387,6 +416,12 @@ export function XmlIgnore(params?: IXmlIgnoreParameters) {
         XmlModelTypeInfoRegistry.getModelTypeInfoByCtor(target.constructor).registerPropertyAsIgnored(propertyKey, params ?? { });
     }
 }
+export function XmlNode(nodeKind?: XmlNodeAssociationKind) {
+    return function(target: any, propertyKey: string) : void {
+        XmlModelTypeInfoRegistry.getModelTypeInfoByCtor(target.constructor).registerPropertyAsNode(propertyKey, nodeKind ?? XmlNodeAssociationKind.AnyNode);
+    }
+}
+
 
 // } annotations
 

@@ -1,3 +1,9 @@
+import { CtorOf } from "annotations";
+
+
+export function makeInstanceOf<T>(ctor: CtorOf<T>, data: Required<T>) : T {
+    return Object.assign(new ctor(), data);
+};
 
 export function foreachSeparating<T>(arr: T[], f: (x: T) => void, s: () => void): void{
     if (arr.length > 0) {
@@ -7,6 +13,10 @@ export function foreachSeparating<T>(arr: T[], f: (x: T) => void, s: () => void)
             f(arr[i]);
         }
     }
+}
+
+export function isArray(obj: any) : obj is Array<any> {
+    return !!obj && obj.constructor === Array;
 }
 
 export function isArrayInstanceOf<T>(arr: any, Class: new (...args: any[])=>T) : arr is Array<T> {

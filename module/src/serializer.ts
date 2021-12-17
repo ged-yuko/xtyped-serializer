@@ -1,6 +1,6 @@
 import { XmlModelItemReference, XmlModelTypeInfo, XmlModelPropertyInfo, findModelTypeInfoByType, findModelTypeInfoByObjType, IXmlModelItemReference, DefaultCtor, CtorOf } from "./annotations";
 import * as m from "./content-model";
-import { ImmStack, collectTree } from "./utils";
+import { ImmStack, collectTree, isArray } from "./utils";
 
 const untype = ((x:any):any => x);
 
@@ -316,7 +316,7 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
     }
 
     visitXmlElement(model: m.XmlElementModel, arg: XmlDomToObjCtx): XmlDomToObjCtx[] {
-        if (model.name  === this._elements[arg.pos].localName) {
+        if (arg.pos < this._elements.length && model.elementName  === this._elements[arg.pos].localName) {
             return [arg.advance(model)];
         } else {
             return [];
@@ -341,7 +341,7 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
     }
     visitXmlChoiceGroup(model: m.XmlElementChoiceGroupModel, arg: XmlDomToObjCtx): XmlDomToObjCtx[] {
         const result = new Array<XmlDomToObjCtx>();
-
+        
         for (const part of model.parts) {
             result.push(... this.visit(arg, part));
         }
@@ -350,26 +350,79 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
     }
 
     private visit(arg: XmlDomToObjCtx, part: m.XmlElementPartModel): XmlDomToObjCtx[] {
-        const results = part.apply(this, arg.enter(part));
-        return results.map(rs => rs.exit(part));
+        
+        const step = (state: XmlDomToObjCtx) => {
+            const results = part.apply(this, state.enter(part));
+            return results.map(rs => rs.exit(part));
+        }
+
+        let states = [arg];
+        let count = 0;
+        while (count < part.minOccurs && states.length > 0) {
+            states = states.flatMap(step);
+            count++;
+        }
+
+        let result = states;
+        while (states.length > 0 && count < part.maxOccurs) {
+            result = states;
+            states = states.flatMap(step);
+            count++;
+        }
+
+        return states.length > 0 ? states : result;
     }
 
     private static _objectFillers = new Map<Function, (ee: Element[], o: any, t: XmlDomToObjCtx) => void>([
-        [m.XmlElementModel, (ee, o, t) => Reflect.set(o, (<m.XmlElementModel>t.part).name, XmlDomToObjMapper.mapElement(ee[t.start], new ((<m.XmlElementModel>t.part).typeCtor)(), <any>t.part))],
-        [m.XmlElementSequenceGroupModel, (ee, o, t) => XmlDomToObjMapper.fillObj(ee, o, t)]
+        [m.XmlElementModel, (ee, o, t) => {
+            const element = (<m.XmlElementModel>t.part);
+            this.ensureCollectionIfNeeded(o, element.propertyName, element);
+            const value = XmlDomToObjMapper.mapElement(ee[t.start], new (element.typeCtor)(), <any>t.part);
+            const existingValue = Reflect.get(o, element.propertyName);
+            if (isArray(existingValue)) {
+                existingValue.push(value);
+            } else {
+                Reflect.set(o, element.propertyName, value);
+            }
+        }],
+        [m.XmlElementSequenceGroupModel, (ee, o, t) => {
+            XmlDomToObjMapper.fillObj(ee, o, t)
+        }],
+        [m.XmlElementChoiceGroupModel, (ee, o, t) => { 
+            const choice = (<m.XmlElementChoiceGroupModel>t.part);
+            this.ensureCollectionIfNeeded(o, choice.propertyName, choice);
+            const part = choice.parts.find(p => p instanceof m.XmlElementModel && p.elementName === ee[t.start].localName);
+            if (part) {
+                XmlDomToObjMapper.fillObj(ee, o, t)
+            } else {
+                throw new Error(`Unexpected part ${ee[t.start]} for ${choice.propertyName} of ${o.constructor.name}`);
+            }
+        }]
     ]);
+
+    private static ensureCollectionIfNeeded(obj: any, propertyName: string, part: m.XmlElementPartModel) {
+        if (part.maxOccurs > 1) {
+            const oldValue = Reflect.get(obj, propertyName);
+            if (!isArray(oldValue)) {
+                const newValue = new Array<any>();
+                Reflect.set(obj, propertyName, newValue);
+            }
+        }
+    }
 
     private static fillObj(elements: Element[], obj: any, tree: XmlDomToObjCtx) {
         for (const s of tree.childs) {
             const ffiller = this._objectFillers.get(s.part.constructor);
             if (ffiller) {
                 ffiller(elements, obj, s);
+            } else {
+                throw new Error(`Xml content part ${s.part.constructor.name} filler is not implemented`);
             }
         }
     }
 
     public static mapElement(node: Element, obj: any, model: m.XmlElementModel) {
-        if (model.name === node.localName) {
+        if (model.elementName === node.localName) {
             const childs = childsOf(node);
             const elements = <Element[]> childs.subnodes.filter(n => n instanceof Element);
             const mapper = new XmlDomToObjMapper(elements);
@@ -407,7 +460,7 @@ class XmlObjToDomCtx {
         public readonly parent: XmlObjToDomCtx|null,
         public readonly element: Element,
         public readonly key: string,
-        public readonly  obj: any
+        public readonly obj: any
     ){
     }
 
@@ -426,9 +479,10 @@ class XmlObjToDomMapper implements m.IXmlContentPartModelVisitor<XmlObjToDomCtx,
     }
 
     visitXmlElement(model: m.XmlElementModel, arg: XmlObjToDomCtx): void {
-        const element = arg.element.ownerDocument.createElementNS(arg.element.namespaceURI, model.name); // TODO consider namespace switching
+        const element = arg.element.ownerDocument.createElementNS(arg.element.namespaceURI, model.elementName); // TODO consider namespace switching
         arg.element.appendChild(element);
-        this.fillElement(model, arg.enter(element, model.name, Reflect.get(arg.obj, model.name)));
+        const value = arg.parent && arg.parent.obj !== arg.obj ? arg.obj : Reflect.get(arg.obj, model.propertyName);
+        this.fillElement(model, arg.enter(element, model.propertyName, value));
     }
     visitXmlAnyElement(model: m.XmlElementAnyModel, arg: XmlObjToDomCtx): void {
         throw new Error("Method not implemented.");
@@ -442,7 +496,17 @@ class XmlObjToDomMapper implements m.IXmlContentPartModelVisitor<XmlObjToDomCtx,
         }
     }
     visitXmlChoiceGroup(model: m.XmlElementChoiceGroupModel, arg: XmlObjToDomCtx): void {
-        throw new Error("Method not implemented.");
+        const rawValue = Reflect.get(arg.obj, model.propertyName);
+        const value = isArray(rawValue) ? rawValue : [rawValue];
+
+        for (const item of value) {
+            const part = model.parts.find(p => p instanceof m.XmlElementModel && p.typeCtor === item.constructor);
+            if (part) {
+                this.visit(part, arg.enter(arg.element, model.propertyName, item));
+            } else {
+                throw new Error(`Unexpected part content ${item.constructor.name} at '${model.propertyName}' of ${arg.obj.constructor.name}`);
+            }
+        }
     }
 
     private visit(part: m.XmlElementPartModel, arg: XmlObjToDomCtx): void {
@@ -527,6 +591,10 @@ const deserializeImpl = <T> (xml: string, ...type: CtorOf<T>[]) : T => {
     const parser = new DOMParser();
     const dom = parser.parseFromString(xml, "application/xml");
     const rootElement = dom.documentElement;
+
+    if (rootElement.localName === 'parsererror') {
+        throw new Error(rootElement.innerText);
+    }
 
     // const mapping = getRootMapping(rootElement, ... untype(type));
     // const root = mapping.instantiate(rootElement);

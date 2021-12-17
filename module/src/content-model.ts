@@ -1,4 +1,4 @@
-import { findModelTypeInfoByType, XmlModelItemReference, IXmlElementParameters, XmlModelTypeInfo, DefaultCtor } from "./annotations";
+import { findModelTypeInfoByType, XmlModelItemReference, IXmlElementParameters, XmlModelTypeInfo, DefaultCtor, IXmlChoiceParameters } from "./annotations";
 import { isArrayInstanceOf } from "./utils";
 
 export interface IXmlValueModelVisitor<T, TRet> {
@@ -62,7 +62,7 @@ class XmlContentPartModelFormatter implements IXmlContentPartModelVisitor<any, s
 
     visitXmlElement(model: XmlElementModel, arg: any): string {
         // return `${model.namespace}:${model.name}`;
-        return `#element[:${model.name}]`;
+        return `#element[:${model.elementName} @${model.propertyName}]`;
     }
     visitXmlAnyElement(model: XmlElementAnyModel, arg: any): string {
         return `#any[]`;
@@ -132,12 +132,18 @@ export abstract class XmlElementGroupModel extends XmlElementPartModel {
         this._parts.push(part);
         return part;
     }
-    public addElement(name: string) { return this.registerPart(new XmlElementModel(name)); }
-    public addChoiceGroup() { return this.registerPart(new XmlElementChoiceGroupModel()); }
+    public addElement(elementName: string, propertyName: string) { return this.registerPart(new XmlElementModel(elementName, propertyName)); }
+    public addChoiceGroup(propertyName: string) { return this.registerPart(new XmlElementChoiceGroupModel(propertyName)); }
     public addSequenceGroup() { return this.registerPart(new XmlElementSequenceGroupModel()); }
     public addAllGroup() { return this.registerPart(new XmlElementAllGroupModel()); }
 }
 export class XmlElementChoiceGroupModel extends XmlElementGroupModel {
+    public constructor(
+        public readonly propertyName
+    ) {
+        super();
+    }
+
     protected applyImpl<T, TRet>(visitor: IXmlContentPartModelVisitor<T, TRet>, arg: T): TRet { return visitor.visitXmlChoiceGroup(this, arg); }
 }
 export class XmlElementSequenceGroupModel extends XmlElementGroupModel {
@@ -382,7 +388,8 @@ export class XmlElementModel extends XmlElementPartModel {
     private _typeCtor: DefaultCtor;
 
     public constructor(
-        public readonly name: string
+        public readonly elementName: string,
+        public readonly propertyName: string
     ) {
         super();
     }
@@ -404,9 +411,9 @@ export class XmlNamespaceModel {
     ) {
     }
 
-    public registerRootElement(name: string) : XmlElementModel {
-        const el = new XmlElementModel(name);
-        this._rootElementsByName.set(name, el);
+    public registerRootElement(elementName: string) : XmlElementModel {
+        const el = new XmlElementModel(elementName, '');
+        this._rootElementsByName.set(elementName, el);
         return el;
     }
 
@@ -420,19 +427,32 @@ export class XmlNamespaceModel {
                 el.content.registerAttribute(prop.name, attr.name ?? prop.name);
             }
 
-            // type XmlElementParamsWithOrder = Required<Pick<IXmlElementParameters, 'order'>> & Omit<IXmlElementParameters, 'order'>;
-            const elts = Array.from(prop.getElements())
-                              //.filter((x): x is XmlElementParamsWithOrder => !!x.order)
-                              .filter((x): x is IXmlElementParameters & { order: number} => !!x.order)
-                              .sort((a, b) => a.order - b.order);
-            for (const er of elts) {
-                const emodel = el.content.getSequence().addElement(er.name ?? prop.name);
+            const choiceSpecs = prop.getChoiceEntries();
+            if (choiceSpecs.length > 1) {
+                throw new Error(`Invalid XML content model: multiple choice declarations found at property '${prop.name}' of type '${typeInfo.getName()}'`);
+            }
+            const choiceSpec = choiceSpecs.length == 0 ? undefined : (<Required<IXmlChoiceParameters>>{ 
+                order: choiceSpecs[0].order ?? 1,
+                minOccurs: choiceSpecs[0].minOccurs ?? 1,
+                maxOccurs: choiceSpecs[0].maxOccurs ?? 1
+            });
+            const choice = choiceSpec ? el.content.getSequence().addChoiceGroup(prop.name) : undefined;
+            choice?.setOccurences(choiceSpec?.minOccurs, choiceSpec?.maxOccurs);
+
+            // // // type XmlElementParamsWithOrder = Required<Pick<IXmlElementParameters, 'order'>> & Omit<IXmlElementParameters, 'order'>;
+            // // const elts = Array.from(prop.getElements())
+            // //                   //.filter((x): x is XmlElementParamsWithOrder => !!x.order)
+            // //                   .filter((x): x is IXmlElementParameters & { order: number} => !!x.order)
+            // //                   .sort((a, b) => a.order - b.order);
+            for (const er of prop.getElements()) {
+                const emodel = (choice ? choice : el.content.getSequence()).addElement(er.name ?? prop.name, prop.name);
+                emodel.setOccurences(er.minOccurs, er.maxOccurs);
+
                 if (er.type?.ctor) {
                     const typeRef = er.type.ctor();
                     emodel.setTypeCtor(typeRef);
 
                     const elTypeInfo = findModelTypeInfoByType(typeRef);
-                    
                     if (!elTypeInfo) {
                         throw new Error('Unknown XML model type ' + typeRef.name);
                     }
