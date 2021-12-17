@@ -1,5 +1,5 @@
 import { XmlComplexType, XmlRoot, XmlAttribute, XmlSimpleType, XmlEnumerationValues, XmlElement, XmlChoice, XmlElementsGroup, XmlElementsGroupEntry, XmlAbstractComplexType, XmlAttributesGroup, XmlAttributesGroupEntry, XmlNode, XmlNodeAssociationKind } from "./annotations";
-
+import 'xmldom-ts'
 
 
 //   <xs:complexType name="anyType" mixed="true">
@@ -322,10 +322,11 @@ export class XsdKeyBase extends XsdAnnotated {
     @XmlAttribute()
     name: string;
 }
-
+@XmlComplexType()
 export class XsdUniqueKey extends XsdKeyBase implements IXsdIdentityConstraint {
     public apply<T, TRet>(visitor: IXsdIdentityConstraintVisitor<T, TRet>, arg: T): TRet { return visitor.visitXsdUniqueKey(this, arg); }
 }
+@XmlComplexType()
 export class XsdKey extends XsdKeyBase implements IXsdIdentityConstraint {
     public apply<T, TRet>(visitor: IXsdIdentityConstraintVisitor<T, TRet>, arg: T): TRet { return visitor.visitXsdKey(this, arg); }
 }
@@ -477,6 +478,7 @@ export class XsdAttribute extends XsdAnnotated {
     @XmlElement({order: 2, name: 'simpleType', minOccurs: 0, type: {ctor: () => XsdLocalSimpleType}})
     simpleType?: XsdLocalSimpleType;
 }
+@XmlComplexType()
 export class XsdAttributeImpl extends XsdAttribute implements IXsdAttrsDecls {
 
     @XmlAttributesGroupEntry({ctor: () => XsdDefRefAttrGroup})
@@ -758,6 +760,7 @@ export class XsdGroupRef extends XsdRealGroup {
 export class XsdExplicitGroup extends XsdGroup {
 
 }
+@XmlComplexType()
 export class XsdExplicitGroupBase extends XsdExplicitGroup {
     @XmlElement({order: 1, name: 'annotation', minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
@@ -770,12 +773,15 @@ export class XsdExplicitGroupBase extends XsdExplicitGroup {
     @XmlElement({name: 'any', type: {ctor: () => XsdAny }})
     particles = new Array<IXsdNestedParticle>();
 }
+@XmlComplexType()
 export class XsdExplicitGroupImpl extends XsdExplicitGroupBase {
     @XmlAttributesGroupEntry({ctor: () => XsdOccursAttrGroup})
     occurs: XsdOccursAttrGroup;
 }
+@XmlComplexType()
 export class XsdExplicitChoiceGroupImpl extends XsdExplicitGroupImpl {
 }
+@XmlComplexType()
 export class XsdExplicitSequenceGroupImpl extends XsdExplicitGroupImpl {
 }
 
@@ -815,10 +821,12 @@ export class XsdAll extends XsdExplicitGroup {
     @XmlElement({order: 2, name: 'element', minOccurs: 0, maxOccurs: 'unbounded', type: {ctor: () => XsdNarrowMaxMin}})
     elements = new Array<XsdNarrowMaxMin>();
 }
+@XmlComplexType()
 export class XsdAllImpl extends XsdAll {
     @XmlAttributesGroupEntry({ctor: () => XsdOccursAttrGroup})
     occurs: XsdOccursAttrGroup;
 }
+@XmlComplexType()
 export class XsdNamedAllParticleGroup extends XsdAll {   
 }
 
@@ -838,8 +846,10 @@ export class XsdNamedAllParticleGroup extends XsdAll {
 @XmlComplexType({name: 'simpleExplicitGroup'})                                                      // ok
 export class XsdSimpleExplicitGroup extends XsdExplicitGroupBase {
 }
+@XmlComplexType()
 export class XsdSimpleExplicitChoiceGroup extends XsdSimpleExplicitGroup {
 }
+@XmlComplexType()
 export class XsdSimpleExplicitSequenceGroup extends XsdSimpleExplicitGroup {
 }
 
@@ -875,6 +885,7 @@ export class XsdRestrictionType extends XsdAnnotated {                          
 //       </xs:restriction>
 //     </xs:complexContent>
 //   </xs:complexType>
+@XmlComplexType({name: 'complexRestrictionType'})
 export class XsdComplexRestrictionType extends XsdRestrictionType {                          // ok
     @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
@@ -905,6 +916,7 @@ export class XsdComplexRestrictionType extends XsdRestrictionType {             
 export class XsdExtensionType extends XsdAnnotated {                                            // ok
     // TODO XsdExtensionType
 }
+@XmlComplexType()
 export class XsdExtensionTypeImpl extends XsdExtensionType {
     @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
@@ -968,6 +980,7 @@ export class XsdComplexContent extends XsdAnnotated {                           
 //       </xs:restriction>
 //     </xs:complexContent>
 //   </xs:complexType>
+@XmlComplexType({name: 'simpleRestrictionType'})
 export class XsdSimpleRestrictionType extends XsdRestrictionType {                              // TODO !!!!!!!!!!!!!!!working
 
     @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
@@ -995,6 +1008,7 @@ export class XsdSimpleRestrictionType extends XsdRestrictionType {              
 //       </xs:restriction>
 //     </xs:complexContent>
 //   </xs:complexType>
+@XmlComplexType({name: 'simpleExtensionType'})
 export class XsdSimpleExtensionType extends XsdExtensionType {                                  // TODO !!!!!!!!!!!!!!!working
     // TODO XsdSimpleExtensionType
 

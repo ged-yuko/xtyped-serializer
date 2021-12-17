@@ -377,12 +377,16 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
         [m.XmlElementModel, (ee, o, t) => {
             const element = (<m.XmlElementModel>t.part);
             this.ensureCollectionIfNeeded(o, element.propertyName, element);
-            const value = XmlDomToObjMapper.mapElement(ee[t.start], new (element.typeCtor)(), <any>t.part);
-            const existingValue = Reflect.get(o, element.propertyName);
-            if (isArray(existingValue)) {
-                existingValue.push(value);
+            if (element.typeCtor) {
+                const value = XmlDomToObjMapper.mapElement(ee[t.start], new (element.typeCtor)(), <any>t.part);
+                const existingValue = Reflect.get(o, element.propertyName);
+                if (isArray(existingValue)) {
+                    existingValue.push(value);
+                } else {
+                    Reflect.set(o, element.propertyName, value);
+                }
             } else {
-                Reflect.set(o, element.propertyName, value);
+                console.warn(`Unable to instantiate model of ${element.elementName} due to unspecified contructor`);
             }
         }],
         [m.XmlElementSequenceGroupModel, (ee, o, t) => {
@@ -433,17 +437,17 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
             // console.warn(model);
 
             if (contentSteps.length !== 1) {
-                throw new Error(`Invalid document`);
-            }
-
-            for (const attr of childs.attributes) {
-                const attrModel = model.content.findAttributeByLocalName(attr.localName);
-                if (attrModel) {
-                    Reflect.set(obj, attrModel.name, attr.value);
+                console.warn(`Invalid document at line ${node.lineNumber}:${node.columnNumber} having ${node.outerHTML}`);
+            } else {
+                for (const attr of childs.attributes) {
+                    const attrModel = model.content.findAttributeByLocalName(attr.localName);
+                    if (attrModel) {
+                        Reflect.set(obj, attrModel.name, attr.value);
+                    }
                 }
-            }
 
-            XmlDomToObjMapper.fillObj(elements, obj, contentSteps[0]);
+                XmlDomToObjMapper.fillObj(elements, obj, contentSteps[0]);
+            }
 
             // console.warn(obj);
             return obj;
@@ -500,11 +504,17 @@ class XmlObjToDomMapper implements m.IXmlContentPartModelVisitor<XmlObjToDomCtx,
         const value = isArray(rawValue) ? rawValue : [rawValue];
 
         for (const item of value) {
-            const part = model.parts.find(p => p instanceof m.XmlElementModel && p.typeCtor === item.constructor);
-            if (part) {
-                this.visit(part, arg.enter(arg.element, model.propertyName, item));
-            } else {
-                throw new Error(`Unexpected part content ${item.constructor.name} at '${model.propertyName}' of ${arg.obj.constructor.name}`);
+            if (item) {
+                if (item.constructor) {
+                    const part = model.parts.find(p => p instanceof m.XmlElementModel && p.typeCtor === item.constructor);
+                    if (part) {
+                        this.visit(part, arg.enter(arg.element, model.propertyName, item));
+                    } else {
+                        throw new Error(`Unexpected part content ${item.constructor.name} at '${model.propertyName}' of ${arg.obj.constructor.name}`);
+                    }
+                } else {
+                    console.warn(`Unable to map ${item} due to missing constructor to classify it`);
+                }
             }
         }
     }
@@ -516,7 +526,9 @@ class XmlObjToDomMapper implements m.IXmlContentPartModelVisitor<XmlObjToDomCtx,
     private fillElement(model: m.XmlElementModel, arg: XmlObjToDomCtx) {
         for (const attrModel of model.content.getAttributes()) {
             const value = Reflect.get(arg.obj, attrModel.propertyName);
-            arg.element.setAttributeNS(attrModel.namespace, attrModel.name, '' + value); // TODO sophisticated simpleTypes
+            if (value) {
+                arg.element.setAttributeNS(attrModel.namespace, attrModel.name, '' + value); // TODO sophisticated simpleTypes
+            }
         }
         
         this.visit(model.content.getSequence(), arg);
@@ -578,7 +590,16 @@ const serializeImpl = (root: any) : string => {
         throw new Error('Unknown root element ' + nsModel.rootSpec.name); 
     }
 
-    var doc = document.implementation.createDocument(nsModel.nsModel.namespace, nsModel.rootSpec.name);
+    var doc: Document;
+    if (typeof(document) !== 'undefined') {
+        doc = document.implementation.createDocument(nsModel.nsModel.namespace, nsModel.rootSpec.name);
+    } else {
+        doc = new DOMImplementation().createDocument(nsModel.nsModel.namespace, nsModel.rootSpec.name);
+        doc.appendChild(doc.createElementNS(nsModel.nsModel.namespace, nsModel.rootSpec.name));
+    }
+    
+    const xmlDeclaration = doc.createProcessingInstruction('xml', 'version="1.0" encoding="UTF-8"');
+    doc.insertBefore(xmlDeclaration, doc.firstChild);
     
     XmlObjToDomMapper.mapElement(doc.documentElement, root, elementModel);
 

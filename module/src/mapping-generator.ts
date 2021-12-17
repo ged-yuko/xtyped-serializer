@@ -115,10 +115,13 @@ class SourceModelBuilder {
 export default {
     // schemaText: xsdschemaText,
     generate: (schemaText: string) : string => {
+        /*
         const schema = xs.deserialize(schemaText, XsdSchema);
         const models = ContentModelBuilder.collect(schema);
         const sources = models.map(m => SourceModelBuilder.collect(m));
         const sourceText = sources.map(s => SourceTextBuilder.format(s)).join('');
+        */
+        const sourceText = xs.serialize(xs.deserialize(schemaText, XsdSchema));
         return sourceText;
     }
 };
