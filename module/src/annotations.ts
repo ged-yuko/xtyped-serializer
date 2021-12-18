@@ -164,7 +164,7 @@ export class XmlModelPropertyInfo {
     }
 }
 
-class XmlModelTypeCtorInfo {
+export class XmlModelTypeCtorInfo {
     private _base: Function;
 
     public constructor(
@@ -290,8 +290,8 @@ export class XmlModelTypeInfo {
         this.getPropertyInfoByName(propertyKey).configureAsNode(nodeKind);
     }
 
-    public createInstance() : any {
-        return this._ctorInfo.createInstance();
+    public getTypeCtorInfo() : XmlModelTypeCtorInfo {
+        return this._ctorInfo;
     }
 }
 

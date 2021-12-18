@@ -1,5 +1,10 @@
 import { CtorOf } from "annotations";
 
+export function firstOrDefault<T, R = T|undefined>(seq: Iterable<T>, def?: R) : R {
+    const it = seq[Symbol.iterator]();
+    const r = it.next()
+    return r.value ? r.value : def;
+}
 
 export function makeInstanceOf<T>(ctor: CtorOf<T>, data: Required<T>) : T {
     return Object.assign(new ctor(), data);
