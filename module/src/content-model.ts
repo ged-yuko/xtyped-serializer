@@ -521,6 +521,8 @@ export class XmlNamespaceModel {
                         throw new Error('Unknown XML model type ' + typeRef.name);
                     }
                     ctmodel = this.resolveComplexTypeModel(elTypeInfo);
+                } else {
+                    ctmodel = new XmlElementContentModel();
                 }
 
                 if (ctmodel) {
