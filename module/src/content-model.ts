@@ -1,5 +1,5 @@
-import { findModelTypeInfoByType, XmlModelItemReference, IXmlElementParameters, XmlModelTypeInfo, DefaultCtor } from "./annotations";
-import { isArrayInstanceOf } from "./utils";
+import { findModelTypeInfoByType, XmlModelItemReference, IXmlElementParameters, XmlModelTypeInfo, DefaultCtor, IXmlChoiceParameters, XmlModelPropertyInfo } from "./annotations";
+import { collectTree, firstOrDefault, IndentedStringBuilder, isArrayInstanceOf } from "./utils";
 
 export interface IXmlValueModelVisitor<T, TRet> {
     visitNumberValue(arg0: XmlNumberValueModel, arg: T): TRet;
@@ -60,42 +60,96 @@ class XmlContentPartModelFormatter implements IXmlContentPartModelVisitor<any, s
     private constructor() {
     }
 
+    private amount(model: XmlElementPartModel) {
+        if (model.minOccurs === 1 && model.maxOccurs === 1) {
+            return '';
+        } else {
+            return '[' + model.minOccurs + '..' + (model.maxOccurs === Number.MAX_SAFE_INTEGER ? '' : model.maxOccurs) + ']';
+        }
+    }
+
     visitXmlElement(model: XmlElementModel, arg: any): string {
         // return `${model.namespace}:${model.name}`;
-        return `#element[:${model.name}]`;
+        return `#element{:${model.elementName} @${model.propertyName}${this.amount(model)}}`;
     }
     visitXmlAnyElement(model: XmlElementAnyModel, arg: any): string {
-        return `#any[]`;
+        return `#any{${this.amount(model)}}`;
     }
     visitXmlAllGroup(model: XmlElementAllGroupModel, arg: any): string {
-        return `#all[${model.parts.join(', ')}]`;
+        return `#all{of ${model.parts.length} subparts ${this.amount(model)}}`;
     }
     visitXmlSequenceGroup(model: XmlElementSequenceGroupModel, arg: any): string {
-        return `#sequence[${model.parts.join(', ')}]`;
+        return `#sequence{of ${model.parts.length} subparts ${model.propertyName ? `as ${model.typeCtor?.name} @${model.propertyName}` : ''}${this.amount(model)}}`;
     }
     visitXmlChoiceGroup(model: XmlElementChoiceGroupModel, arg: any): string {
-        return `#choice[${model.parts.join(', ')}]`;
+        return `#choice{of ${model.parts.length} subparts ${model.propertyName ? `@${model.propertyName}` : ''}${this.amount(model)}}`;
     }
     visitXmlAttribute(model: XmlAttributeModel, arg: any): string {
-        return `${model.namespace}:@${model.name}`;
+        return `${model.namespace}:@${model.attributeName}`;
+    }
+}
+
+class XmlContentPartModelCompleteFormatter implements IXmlContentPartModelVisitor<any, string> {
+
+    public static Instance = new XmlContentPartModelCompleteFormatter();
+
+    private constructor() {
+    }
+
+    private amount(model: XmlElementPartModel) {
+        if (model.minOccurs === 1 && model.maxOccurs === 1) {
+            return '';
+        } else {
+            return '[' + model.minOccurs + '..' + (model.maxOccurs === Number.MAX_SAFE_INTEGER ? '' : model.maxOccurs) + ']';
+        }
+    }
+
+    visitXmlElement(model: XmlElementModel, arg: any): string {
+        // return `${model.namespace}:${model.name}`;
+        return `#element{:${model.elementName} @${model.propertyName}${this.amount(model)}}`;
+    }
+    visitXmlAnyElement(model: XmlElementAnyModel, arg: any): string {
+        return `#any{${this.amount(model)}}`;
+    }
+    visitXmlAllGroup(model: XmlElementAllGroupModel, arg: any): string {
+        return `#all{of ${model.parts} subparts ${this.amount(model)} : ${model.parts.join(', ')}}`;
+    }
+    visitXmlSequenceGroup(model: XmlElementSequenceGroupModel, arg: any): string {
+        return `#sequence{of ${model.parts} subparts ${model.propertyName ? `as ${model.typeCtor?.name} @${model.propertyName}` : ''}${this.amount(model)}: ${model.parts.join(', ')}}`;
+    }
+    visitXmlChoiceGroup(model: XmlElementChoiceGroupModel, arg: any): string {
+        return `#choice{of ${model.parts} subparts ${model.propertyName ? `@${model.propertyName}` : ''}${this.amount(model)}: ${model.parts.join(', ')}}`;
+    }
+    visitXmlAttribute(model: XmlAttributeModel, arg: any): string {
+        return `${model.namespace}:@${model.attributeName}`;
     }
 }
 
 export abstract class XmlContentPartModel {
+
+    public constructor(
+    ) {
+    }
 
     public apply<T, TRet>(visitor: IXmlContentPartModelVisitor<T, TRet>, arg: T): TRet { return this.applyImpl(visitor, arg); }
 
     protected abstract applyImpl<T, TRet>(visitor: IXmlContentPartModelVisitor<T, TRet>, arg: T): TRet;
 
     public toString() : string { return this.apply(XmlContentPartModelFormatter.Instance, null); }
+    public toStringComplete() : string { return this.apply(XmlContentPartModelCompleteFormatter.Instance, null); }
+    public toStringDescribe() : string {
+        return collectTree(<XmlContentPartModel>this, p => p instanceof XmlElementGroupModel ? p.parts : [], p => p.toString()); 
+    }
 }
 
 export class XmlAttributeModel extends XmlContentPartModel {
     
     public constructor(
         public readonly propertyName: string,
-        public readonly name: string,
-        public readonly namespace: string
+        public readonly attributeName: string,
+        public readonly namespace: string,
+        public readonly defaultValue: any|undefined,
+        public readonly required: boolean
     ) {
         super();
     }
@@ -122,7 +176,9 @@ export abstract class XmlElementPartModel extends XmlContentPartModel {
 export abstract class XmlElementGroupModel extends XmlElementPartModel {
     private _parts = new Array<XmlElementPartModel>();
     
-    public constructor() {
+    public constructor(
+        public readonly containerContext: XmlElementContentModel
+    ) {
         super();
     }
 
@@ -132,16 +188,38 @@ export abstract class XmlElementGroupModel extends XmlElementPartModel {
         this._parts.push(part);
         return part;
     }
-    public addElement(name: string) { return this.registerPart(new XmlElementModel(name)); }
-    public addChoiceGroup() { return this.registerPart(new XmlElementChoiceGroupModel()); }
-    public addSequenceGroup() { return this.registerPart(new XmlElementSequenceGroupModel()); }
-    public addAllGroup() { return this.registerPart(new XmlElementAllGroupModel()); }
+    public addElement(propertyName: string, elementName: string, contentModel: XmlElementContentModel) { return this.registerPart(new XmlElementModel(elementName, propertyName, contentModel)); }
+    public addChoiceGroup(propertyName: string) { return this.registerPart(new XmlElementChoiceGroupModel(this.containerContext, propertyName)); }
+    public addSequenceGroup() { return this.registerPart(new XmlElementSequenceGroupModel(this.containerContext)); }
+    public addAllGroup() { return this.registerPart(new XmlElementAllGroupModel(this.containerContext)); }
 }
 export class XmlElementChoiceGroupModel extends XmlElementGroupModel {
+    public constructor(
+        containerContext: XmlElementContentModel,
+        public readonly propertyName
+    ) {
+        super(containerContext);
+    }
+
     protected applyImpl<T, TRet>(visitor: IXmlContentPartModelVisitor<T, TRet>, arg: T): TRet { return visitor.visitXmlChoiceGroup(this, arg); }
 }
 export class XmlElementSequenceGroupModel extends XmlElementGroupModel {
+    private _typeCtor?: DefaultCtor;
+    private _propertyName?: string;
+
+    public constructor(containerContext: XmlElementContentModel) {
+        super(containerContext);
+    }
+
+    public get typeCtor() { return this._typeCtor; }
+    public get propertyName() { return this._propertyName; }
+
     protected applyImpl<T, TRet>(visitor: IXmlContentPartModelVisitor<T, TRet>, arg: T): TRet { return visitor.visitXmlSequenceGroup(this, arg); }
+
+    public setModelInfo(propertyName: string, ctor: DefaultCtor) {
+        this._propertyName = propertyName;
+        this._typeCtor = ctor; 
+    }
 }
 export class XmlElementAllGroupModel extends XmlElementGroupModel {
     protected applyImpl<T, TRet>(visitor: IXmlContentPartModelVisitor<T, TRet>, arg: T): TRet { return visitor.visitXmlAllGroup(this, arg); }
@@ -342,17 +420,49 @@ class XmlElementContentFsmBuilder implements IXmlContentPartModelVisitor<any, Co
     visitXmlAttribute(model: XmlAttributeModel, arg: any): ContentFsmFragment { throw new Error("Method not implemented."); }
 }
 
-export class XmlElementContentModel {
-    private _attrs = new Map<string, XmlAttributeModel>();
-    private _sequence = new XmlElementSequenceGroupModel();
+export abstract class XmlAttrsContainerModel {
+    // private _partsByProp = new Map<string, XmlAttrsContainerModel>();
+    private _attrs = new Array<XmlAttributeModel>();
+    private _groups = new Array<XmlAttributeGroupModel>();
+
+    public getAttributes() : ReadonlyArray<XmlAttributeModel> {
+        // return Array.from(this._attrs.values());
+        return this._attrs;
+    }
+    public getAttributeGroups() : ReadonlyArray<XmlAttributeGroupModel> {
+        return this._groups;
+    }
+
+    public registerAttribute(propertyName: string, elementName: string, defaultValue: any|undefined, required: boolean) : XmlAttributeModel {
+        const attr = new XmlAttributeModel(propertyName, elementName, '', defaultValue, required); // TODO: attribute namespace
+        this._attrs.push(attr);
+        return attr;
+    }
+
+    public registerAttrsGroup(propertyName: string, typeCtor: DefaultCtor) : XmlAttributeGroupModel {
+        const group = new XmlAttributeGroupModel(propertyName, typeCtor);
+        this._groups.push(group);
+        return group;
+    }
+}
+
+export class XmlAttributeGroupModel extends XmlAttrsContainerModel {
+    public constructor(
+        public readonly propertyName: string,
+        public readonly typeCtor: DefaultCtor
+    ) {
+        super();
+    }
+}
+
+export class XmlElementContentModel extends XmlAttrsContainerModel {
+    private _sequence: XmlElementSequenceGroupModel;
     private _isMixed = false;
     private _fsm: XmlElementContentFsm;
 
     public constructor() {
-    }
-
-    public getAttributes() : ReadonlyArray<XmlAttributeModel> {
-        return Array.from(this._attrs.values());
+        super();
+        this._sequence = new XmlElementSequenceGroupModel(this);
     }
 
     public getFsm() {
@@ -365,29 +475,19 @@ export class XmlElementContentModel {
     public getSequence() {
         return this._sequence;
     }
-
-    public findAttributeByLocalName(name: string) : XmlAttributeModel|undefined {
-        return this._attrs.get(name);
-    }
-
-    public registerAttribute(propertyName: string, name: string) : XmlAttributeModel {
-        const attr = new XmlAttributeModel(propertyName, name, ''); // TODO: attribute namespace
-        this._attrs.set(name, attr);
-        return attr;
-    }
 }
 
 export class XmlElementModel extends XmlElementPartModel {
-    private _content = new XmlElementContentModel();
     private _typeCtor: DefaultCtor;
 
     public constructor(
-        public readonly name: string
+        public readonly elementName: string,
+        public readonly propertyName: string,
+        public readonly content: XmlElementContentModel
     ) {
         super();
     }
 
-    public get content() { return this._content; }
     public get typeCtor() { return this._typeCtor; }
 
     protected applyImpl<T, TRet>(visitor: IXmlContentPartModelVisitor<T, TRet>, arg: T): TRet { return visitor.visitXmlElement(this, arg); }
@@ -395,50 +495,168 @@ export class XmlElementModel extends XmlElementPartModel {
     public setTypeCtor(ctor: DefaultCtor) { this._typeCtor = ctor; }
 }
 
-
 export class XmlNamespaceModel {
     private _rootElementsByName = new Map<string, XmlElementModel>();
+    private _complexTypesByCtor = new Map<Function, XmlElementContentModel>();
 
     public constructor(
         public readonly namespace: string
     ) {
     }
 
-    public registerRootElement(name: string) : XmlElementModel {
-        const el = new XmlElementModel(name);
-        this._rootElementsByName.set(name, el);
-        return el;
-    }
-
     public findRootElement(name: string) : XmlElementModel|undefined {
         return this._rootElementsByName.get(name);
     }
 
-    private static populateElementModel(el: XmlElementModel, typeInfo: XmlModelTypeInfo) : void {
-        for (const prop of Array.from(typeInfo.getProps())) {
-            for (const attr of Array.from(prop.getAttributes())) {
-                el.content.registerAttribute(prop.name, attr.name ?? prop.name);
+    private resolveComplexTypeModel(typeInfo: XmlModelTypeInfo) : XmlElementContentModel {
+        let contentModel = this._complexTypesByCtor.get(typeInfo.getTypeCtorInfo().ctor);
+        if (!contentModel) {
+            this._complexTypesByCtor.set(typeInfo.getTypeCtorInfo().ctor, contentModel = new XmlElementContentModel());
+            this.populateAttrsModel(contentModel, typeInfo);
+            this.populatePartModel(contentModel, typeInfo);
+            // console.warn(`Model of ${typeInfo.getName()}: ${contentModel.getSequence()}`)
+
+            for (const rootSpec of typeInfo.getRootSpecs()) {
+                const rootElement = new XmlElementModel(rootSpec.name ?? typeInfo.getName(), '', contentModel);
+                this._rootElementsByName.set(rootElement.elementName, rootElement);
+            }
+        } else {
+            // console.warn(`Reusing part model for ${typeInfo.getName()}`);
+        }
+        return contentModel;
+    }
+
+    private collectTypeProps(typeInfo: XmlModelTypeInfo) {
+        const allProps = [typeInfo.getProps()];
+        
+        let baseType = typeInfo.getTypeCtorInfo().getBaseType();
+        while (baseType) {
+            const baseTypeInfo = findModelTypeInfoByType(baseType);
+            if (baseTypeInfo) {
+                allProps.push(baseTypeInfo.getProps());
+                baseType = baseTypeInfo.getTypeCtorInfo().getBaseType();
+            }
+        }
+
+        const maxPropsPerType = Math.max(... allProps.map(pp => pp.length));
+        const orderStep = Math.pow(10, ('' + maxPropsPerType).length);
+
+        allProps.reverse();
+        const result = allProps.flatMap((pp, n) => pp.map(p => ({ 
+            prop: p, order: (firstOrDefault(p.getChoiceEntries())?.order
+                          ?? firstOrDefault(p.getElements())?.order 
+                          ?? firstOrDefault(p.getElementsGroupEntries())?.order 
+                          ?? firstOrDefault(p.getTextEntries())?.order 
+                          ?? 0) + n * orderStep
+        })));
+        result.sort((a, b) => a.order - b.order)
+
+        // const sb = new IndentedStringBuilder();
+        // sb.appendLine('props of ' + typeInfo.getTypeCtorInfo().ctor.name).push();
+        // result.forEach(p => sb.appendLine(`    ${p.order}: ${p.prop.name}`));
+        // sb.pop().appendLine();
+        // console.warn(sb.stringify());
+
+        return result;
+    }
+
+    private populateAttrsModel(part: XmlAttrsContainerModel, typeInfo: XmlModelTypeInfo) {
+        const baseType = typeInfo.getTypeCtorInfo().getBaseType();
+        if (baseType) {
+            const baseTypeInfo = findModelTypeInfoByType(baseType);
+            if (!baseTypeInfo) {
+                throw new Error('Unknown XML model type ' + baseType.name);
+            }
+            this.populateAttrsModel(part, baseTypeInfo);
+        }
+
+        for (const prop of typeInfo.getProps()) {
+            for (const attr of prop.getAttributes()) {
+                part.registerAttribute(prop.name, attr.name ?? prop.name, attr.default, attr.required ?? false);
             }
 
-            // type XmlElementParamsWithOrder = Required<Pick<IXmlElementParameters, 'order'>> & Omit<IXmlElementParameters, 'order'>;
-            const elts = Array.from(prop.getElements())
-                              //.filter((x): x is XmlElementParamsWithOrder => !!x.order)
-                              .filter((x): x is IXmlElementParameters & { order: number} => !!x.order)
-                              .sort((a, b) => a.order - b.order);
-            for (const er of elts) {
-                const emodel = el.content.getSequence().addElement(er.name ?? prop.name);
-                if (er.type?.ctor) {
-                    const typeRef = er.type.ctor();
-                    emodel.setTypeCtor(typeRef);
-
+            for (const ag of prop.getAttrGroupEntries()) {
+                if (ag.ctor) {
+                    const typeRef = ag.ctor();
                     const elTypeInfo = findModelTypeInfoByType(typeRef);
-                    
                     if (!elTypeInfo) {
                         throw new Error('Unknown XML model type ' + typeRef.name);
                     }
-
-                    this.populateElementModel(emodel, elTypeInfo);
+                    const group = part.registerAttrsGroup(prop.name, typeRef);
+                    this.populateAttrsModel(group, elTypeInfo);
                 }
+            }
+        }
+    }
+
+    private populatePartModel(part: XmlElementContentModel|XmlElementSequenceGroupModel, typeInfo: XmlModelTypeInfo) : void {
+        // console.warn(`Preparing part model for ${typeInfo.getName()}`);
+        const partSequence = part instanceof XmlElementContentModel ? part.getSequence() : part;
+        const props = this.collectTypeProps(typeInfo);
+        for (const prop of props.map(p => p.prop)) {
+
+            const choiceSpecs = prop.getChoiceEntries();
+            if (choiceSpecs.length > 1) {
+                throw new Error(`Invalid XML content model: multiple choice declarations found at property '${prop.name}' of type '${typeInfo.getName()}'`);
+            }
+            const choiceSpec = choiceSpecs.length == 0 ? undefined : (<Required<IXmlChoiceParameters>>{ 
+                order: choiceSpecs[0].order ?? 1,
+                minOccurs: choiceSpecs[0].minOccurs ?? 1,
+                maxOccurs: choiceSpecs[0].maxOccurs ?? 1
+            });
+            const choice = choiceSpec ? partSequence.addChoiceGroup(prop.name) : undefined;
+            choice?.setOccurences(choiceSpec?.minOccurs, choiceSpec?.maxOccurs);
+            
+            const containerModel = choice ? choice : partSequence;
+
+            // // // type XmlElementParamsWithOrder = Required<Pick<IXmlElementParameters, 'order'>> & Omit<IXmlElementParameters, 'order'>;
+            // // const elts = Array.from(prop.getElements())
+            // //                   //.filter((x): x is XmlElementParamsWithOrder => !!x.order)
+            // //                   .filter((x): x is IXmlElementParameters & { order: number} => !!x.order)
+            // //                   .sort((a, b) => a.order - b.order);
+            for (const er of prop.getElements()) {
+                let ctmodel: XmlElementContentModel|undefined;
+                let typeRef: DefaultCtor|undefined;
+                if (er.type?.ctor) {
+                    typeRef = er.type.ctor();
+
+                    const elTypeInfo = findModelTypeInfoByType(typeRef);
+                    if (!elTypeInfo) {
+                        throw new Error('Unknown XML model type ' + typeRef.name);
+                    }
+                    ctmodel = this.resolveComplexTypeModel(elTypeInfo);
+                } else {
+                    ctmodel = new XmlElementContentModel();
+                }
+
+                if (ctmodel) {
+                    const emodel = containerModel.addElement(prop.name, er.name ?? prop.name, ctmodel);
+                    emodel.setOccurences(er.minOccurs, er.maxOccurs);
+
+                    if (typeRef) {
+                        emodel.setTypeCtor(typeRef); // TODO move it to XmlElementContentModel
+                    }
+                }
+            }
+
+            for (const eg of prop.getElementsGroupEntries()) {
+                const smodel = containerModel.addSequenceGroup();
+                smodel.setOccurences(eg.minOccurs, eg.maxOccurs);
+
+                if (eg.ctor) {
+                    const typeRef = eg.ctor();
+                    smodel.setModelInfo(prop.name, typeRef);
+
+                    const elTypeInfo = findModelTypeInfoByType(typeRef);
+                    if (!elTypeInfo) {
+                        throw new Error('Unknown XML model type ' + typeRef.name);
+                    }
+                    this.populatePartModel(smodel, elTypeInfo);
+                }
+            }
+
+            for (const t of prop.getTextEntries()) {
+                console.warn('Text node handling not implemented');
             }
         }
     }
@@ -451,11 +669,8 @@ export class XmlNamespaceModel {
         if (!typeInfo) {
             throw new Error('Unknown XML model type ' + type.name);
         }
-        
-        for (const ct of typeInfo.getRootSpecs()) {
-            const el = model.registerRootElement(ct.name ?? typeInfo.getName());
-            this.populateElementModel(el, typeInfo);
-        }
+
+        model.resolveComplexTypeModel(typeInfo);
 
         return model;
     }
