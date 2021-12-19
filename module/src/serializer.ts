@@ -1,6 +1,6 @@
 import { XmlModelItemReference, XmlModelTypeInfo, XmlModelPropertyInfo, findModelTypeInfoByType, findModelTypeInfoByObjType, IXmlModelItemReference, DefaultCtor, CtorOf } from "./annotations";
 import * as m from "./content-model";
-import { ImmStack, collectTree, isArray } from "./utils";
+import { ImmStack, collectTree, isArray, IndentedStringBuilder, firstOrDefault, parallelMap } from "./utils";
 
 const untype = ((x:any):any => x);
 
@@ -295,6 +295,13 @@ class XmlDomToObjCtx {
             throw new Error('Parser/mapper inconsistency');
         }
     }
+
+    public equals(other: XmlDomToObjCtx) : boolean {
+        return this.pos === other.pos 
+            && this.start === other.start
+            && this.part === other.part 
+            && parallelMap(cc => cc[0].equals(cc[1]), this.childs, other.childs).every(b => b);
+    }
     
     public static initial(part: m.XmlElementPartModel) {
         return new XmlDomToObjCtx(null, [], part, 0, 0);
@@ -446,22 +453,40 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
             const childs = childsOf(node);
             const elements = <Element[]> childs.subnodes.filter(n => n instanceof Element);
             const mapper = new XmlDomToObjMapper(elements);
-            const contentSteps = mapper.visit(XmlDomToObjCtx.initial(model), model.content.getSequence());
+            const plausibleContentSteps = mapper.visit(XmlDomToObjCtx.initial(model), model.content.getSequence());
+            const maxDst = Math.max(... plausibleContentSteps.map(s => s.pos));
+            const contentSteps = plausibleContentSteps.filter(s => s.pos === maxDst);
 
-            //const tre = contentSteps.map(t => collectTree(t, s => s.childs, s => s.part.toString() + ' @' + s.pos));
-            // tre.forEach(t => console.warn(t));
-            // console.warn(model);
+            // if (contentSteps.length > 1) {
+            //     const first = contentSteps[0];
+            //     if (contentSteps.slice(1).every(s => s.equals(first))) {
+            //         contentSteps = [first];
+            //     }
+            // }
 
             if (contentSteps.length !== 1) {
-                console.warn(`Invalid document at line ${node.lineNumber}:${node.columnNumber} having ${node.outerHTML}`);
-            } else {
-                for (const attr of childs.attributes) {
-                    const attrModel = model.content.findAttributeByLocalName(attr.localName);
-                    if (attrModel) {
-                        Reflect.set(obj, attrModel.propertyName, attr.value);
-                    }
+                const contentSteps = mapper.visit(XmlDomToObjCtx.initial(model), model.content.getSequence());
+
+                const tre = contentSteps.map(t => collectTree(t, s => s.childs, s => s.part.toString() + ' @' + s.pos));
+
+                const sb = new IndentedStringBuilder();
+                sb.appendLine(`Invalid document at line ${node.lineNumber}:${node.columnNumber} having`).push();
+                sb.appendLine().push();
+                sb.appendLine(node.outerHTML).pop();
+                sb.appendLine();
+                sb.appendLine(`while expected`).push();
+                sb.appendLine(model.content.getSequence().toStringDescribe()).pop();
+                sb.appendLine(`but got ${contentSteps.length} of paths`).push();
+                if (tre.length > 0) {
+                    sb.appendLine();
+                    tre.forEach(t => sb.appendLine(t));
+                } else {
+                    sb.appendLine(`nothing nice`);
                 }
 
+                console.warn(sb.stringify());
+            } else {
+                this.mapElementAttributes(node, obj, model.content);
                 XmlDomToObjMapper.fillObj(elements, obj, contentSteps[0]);
             }
 
@@ -470,6 +495,22 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
         } else {
             throw new Error('Invalid mapping attept');
         }        
+    }
+
+    private static mapElementAttributes(node: Element, obj: any, model: m.XmlAttrsContainerModel) {
+        for (const attr of model.getAttributes()) {
+            const value = node.getAttributeNS(null, attr.attributeName);
+            if (value) {
+                Reflect.set(obj, attr.propertyName, value);
+            } else if (attr.defaultValue) {
+                Reflect.set(obj, attr.propertyName, attr.defaultValue);
+            }
+        }
+        for (const agroup of model.getAttributeGroups()) {
+            const value = new agroup.typeCtor();
+            Reflect.set(obj, agroup.propertyName, value); // TODO make it possible to have optional attribute groups
+            this.mapElementAttributes(node, value, agroup);
+        }
     }
 
     visitXmlAttribute(model: m.XmlAttributeModel, arg: XmlDomToObjCtx): XmlDomToObjCtx[] { throw new Error("Method not implemented."); }
@@ -516,8 +557,19 @@ class XmlObjToDomMapper implements m.IXmlContentPartModelVisitor<XmlObjToDomCtx,
         throw new Error("Method not implemented.");
     }
     visitXmlSequenceGroup(model: m.XmlElementSequenceGroupModel, arg: XmlObjToDomCtx): void {
+        let ctx = arg;
+        if (model.propertyName) {
+            const groupObj = Reflect.get(arg.obj, model.propertyName);
+            if (groupObj) {
+                ctx = arg.enter(arg.element, model.propertyName, groupObj)
+                         .enter(arg.element, model.propertyName, groupObj); // hack
+            } else {
+                return;
+            }
+        } 
+
         for (const part of model.parts) {
-            this.visit(part, arg);
+            this.visit(part, ctx);
         }
     }
     visitXmlChoiceGroup(model: m.XmlElementChoiceGroupModel, arg: XmlObjToDomCtx): void {
@@ -545,14 +597,25 @@ class XmlObjToDomMapper implements m.IXmlContentPartModelVisitor<XmlObjToDomCtx,
     }
 
     private fillElement(model: m.XmlElementModel, arg: XmlObjToDomCtx) {
-        for (const attrModel of model.content.getAttributes()) {
-            const value = Reflect.get(arg.obj, attrModel.propertyName);
-            if (value) {
-                arg.element.setAttributeNS(attrModel.namespace, attrModel.attributeName, '' + value); // TODO sophisticated simpleTypes
+        this.fillElementAttributes(arg.element, arg.obj, model.content);
+        this.visit(model.content.getSequence(), arg);
+    }
+
+    private fillElementAttributes(element: Element, obj: any, model: m.XmlAttrsContainerModel) {
+        for (const attrModel of model.getAttributes()) {
+            const value = Reflect.get(obj, attrModel.propertyName);
+            if ((value && !attrModel.defaultValue) || (attrModel.defaultValue && value !== attrModel.defaultValue)) {
+                    element.setAttributeNS(attrModel.namespace, attrModel.attributeName, '' + value); // TODO sophisticated simpleTypes
+            } else if (attrModel.required) {
+                element.setAttributeNS(attrModel.namespace, attrModel.attributeName, '');
             }
         }
-        
-        this.visit(model.content.getSequence(), arg);
+        for (const groupModel of model.getAttributeGroups()) {
+            const value  = Reflect.get(obj, groupModel.propertyName);
+            if (value) {
+                this.fillElementAttributes(element, value, groupModel);
+            }
+        }
     }
 
     public static mapElement(node: Element, obj: any, model: m.XmlElementModel) {

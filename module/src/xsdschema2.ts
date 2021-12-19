@@ -115,10 +115,10 @@ export class XsdAnnotated extends XsdOpenAttrs {
 //   </xs:attributeGroup>
 @XmlAttributesGroup({ name: 'occurs' })                                                         // ok
 export class XsdOccursAttrGroup {
-    @XmlAttribute({name: 'minOccurs'})
-    min?: number = 1;
-    @XmlAttribute({name: 'maxOccurs'})
-    max?: number = 1;
+    @XmlAttribute({name: 'minOccurs', default: 1})
+    min?: number;
+    @XmlAttribute({name: 'maxOccurs', default: 1})
+    max?: number;
 }
 
 //   <xs:attributeGroup name="defRef">
@@ -257,7 +257,7 @@ export class XsdTopLevelSimpleType extends XsdSimpleType {
 
     @XmlAttribute()
     final: string;
-    @XmlAttribute()
+    @XmlAttribute({required: true})
     name: string;
 }
 
@@ -325,7 +325,7 @@ export interface IXsdIdentityConstraintVisitor<T, TRet> {
 //   </xs:element>
 @XmlComplexType()
 export class XsdSelector extends XsdAnnotated {                                         // ok
-    @XmlAttribute()
+    @XmlAttribute({required: true})
     xpath: string;
 }
 
@@ -343,7 +343,7 @@ export class XsdSelector extends XsdAnnotated {                                 
 //   </xs:element>
 @XmlComplexType()                                                                       // ok
 export class XsdField extends XsdAnnotated {
-    @XmlAttribute()
+    @XmlAttribute({required: true})
     xpath: string;
 }
 
@@ -364,7 +364,7 @@ export class XsdKeyBase extends XsdAnnotated {
     selector: XsdSelector;
     @XmlElement({order: 2, minOccurs: 1, maxOccurs: 'unbounded', type: {ctor: () => XsdField}})
     field = new Array<XsdField>();
-    @XmlAttribute()
+    @XmlAttribute({required: true})
     name: string;
 }
 @XmlComplexType()
@@ -400,7 +400,7 @@ export class XsdKey extends XsdKeyBase implements IXsdIdentityConstraint {
 //   </xs:element>
 @XmlComplexType({ name: 'keyref' })                                                         // ok
 export class XsdKeyRef extends XsdKeyBase implements IXsdIdentityConstraint {
-    @XmlAttribute()
+    @XmlAttribute({required: true})
     refer: string;
 
     public apply<T, TRet>(visitor: IXsdIdentityConstraintVisitor<T, TRet>, arg: T): TRet { return visitor.visitXsdKeyRef(this, arg); }
@@ -431,7 +431,7 @@ export class XsdWildcard extends XsdAnnotated {
     @XmlAttribute()
     namespace?: string;
 
-    @XmlAttribute()
+    @XmlAttribute({default: 'strict'})
     processContents: string;
 }
 
@@ -569,7 +569,7 @@ export class XsdAttributeImpl extends XsdAttribute implements IXsdAttrsDecls {
 @XmlComplexType({name: 'topLevelAttribute'})                                                    // ok
 export class XsdTopLevelAttribute extends XsdAttribute {
     
-    @XmlAttribute()
+    @XmlAttribute({required: true})
     name: string;
 }
 
@@ -613,7 +613,7 @@ export class XsdNamedAttributeGroup extends XsdAttributeGroup {
     @XmlElementsGroupEntry({order: 2, ctor: () => XsdAttrDecls})
     attrDecls: XsdAttrDecls;
 
-    @XmlAttribute()
+    @XmlAttribute({required: true})
     name: string;
 }
 
@@ -635,7 +635,7 @@ export class XsdAttributeGroupRef extends XsdAttributeGroup {
     @XmlElement({order: 1, name: 'annotation', type: { ctor: () => XsdAnnotation }, minOccurs: 0})
     annotation: XsdAnnotation;
 
-    @XmlAttribute()
+    @XmlAttribute({required: true})
     ref: string;
 }
 
@@ -748,7 +748,7 @@ export class XsdNamedGroup extends XsdRealGroup {
     @XmlElement({name: 'sequence', type: {ctor: () => XsdSimpleExplicitSequenceGroup}})
     particle: IXsdNamedGroupParticle;
 
-    @XmlAttribute()
+    @XmlAttribute({required: true})
     name: string;
 }
 
@@ -769,7 +769,7 @@ export class XsdGroupRef extends XsdRealGroup {
     @XmlElement({order: 1, name: 'annotation', minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
 
-    @XmlAttribute()
+    @XmlAttribute({required: true})
     ref: string;
     @XmlAttributesGroupEntry({name: 'occurs'})
     occurs: XsdOccursAttrGroup;
@@ -1159,7 +1159,7 @@ export class XsdTopLevelComplexType extends XsdComplexType {
     @XmlElementsGroupEntry({ctor: () => XsdImplicitComplexTypeModel})
     model: IXsdComplexTypeModel;
 
-    @XmlAttribute()
+    @XmlAttribute({required: true})
     name: string;
     @XmlAttribute()
     mixed: boolean;
@@ -1381,7 +1381,7 @@ export class XsdTopLevelElement extends XsdElement implements IXsdSchemaTop {
     // final: derivationSet;
     // @XmlAttribute()
     // block: blockSet;
-    @XmlAttribute()
+    @XmlAttribute({required: true})
     name: string;
 }
 
@@ -1444,13 +1444,13 @@ export class XsdSchema extends XsdOpenAttrs {
     targetNamespace: string;
     @XmlAttribute()
     version: string;
-    @XmlAttribute()
+    @XmlAttribute({default: ''})
     finalDefault?: string;
-    @XmlAttribute()
+    @XmlAttribute({default: ''})
     blockDefault?: string;
-    @XmlAttribute({type: {ctor: () => XsdFormChoiceType}})
+    @XmlAttribute({type: {ctor: () => XsdFormChoiceType}, default: 'unqualified'})
     attributeFormDefault?: XsdFormChoice;
-    @XmlAttribute({type: {ctor: () => XsdFormChoiceType}})
+    @XmlAttribute({type: {ctor: () => XsdFormChoiceType}, default: 'unqualified'})
     elementFormDefault?: XsdFormChoice;
     @XmlAttribute()
     id: string;

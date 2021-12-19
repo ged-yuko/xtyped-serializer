@@ -6,6 +6,19 @@ export function firstOrDefault<T, R = T|undefined>(seq: Iterable<T>, def?: R) : 
     return r.value ? r.value : def;
 }
 
+export function parallelMap<T, R>(f: (args: T[]) => R, ...arrs: Iterable<T>[]) : R[] {
+    const result = new Array<R>();
+
+    const its = arrs.map(s => s[Symbol.iterator]());
+    let rr = its.map(t => t.next());
+    while (rr.every(x => !!x.value)) {
+        result.push(f(rr.map(r => r.value)));
+        rr = its.map(t => t.next());
+    }
+
+    return result;
+}
+
 export function makeInstanceOf<T>(ctor: CtorOf<T>, data: Required<T>) : T {
     return Object.assign(new ctor(), data);
 };
@@ -154,17 +167,23 @@ export class IndentedStringBuilder {
     }
 
     public append(str: string): IndentedStringBuilder {
-        this.appendPrefixInternal();
+        this.appendPrefixIfNeeded();
         
-        this._content.push(str);
+        const lines = str.split('\n')
+        this._content.push(lines[0]);
+        for (const line of lines.slice(1)) {
+            this._content.push('\n');
+            this.appendPrefixImpl();
+            this._content.push(line);
+        }
         return this;
     }
 
     public appendLine(str?: string): IndentedStringBuilder {
-        this.appendPrefixInternal();
+        this.appendPrefixIfNeeded();
 
         if (str) {
-            this._content.push(str);
+            this.append(str);
         }
         this._content.push("\n");
 
@@ -172,15 +191,17 @@ export class IndentedStringBuilder {
         return this;
     }
 
-    private appendPrefixInternal(): void {
+    private appendPrefixIfNeeded(): void {
         if (this._lineStart) {
-
-            for (const s of this._prefix) {
-                this._content.push(s);
-            }
-
+            this.appendPrefixImpl();
             this._lineStart = false;
         }   
+    }
+
+    private appendPrefixImpl(): void{
+        for (const s of this._prefix) {
+            this._content.push(s);
+        }
     }
 
     public push(prefix?: string): IndentedStringBuilder {

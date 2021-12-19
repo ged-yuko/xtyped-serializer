@@ -37,6 +37,8 @@ export interface IXmlRootParameters extends IXmlModelItemReference {
 
 export interface IXmlAttributeParameters extends IXmlModelItemReference {
     readonly type?: IXmlModelTypeReference;
+    readonly default?: any;
+    readonly required?: boolean;
 }
 
 export interface IXmlElementParameters extends IXmlModelItemReference, IXmlPartOccurenceParameters {
