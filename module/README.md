@@ -8,8 +8,8 @@ XsdSchema-aware XML serializer for TypeScript
 - [ ] Choice dispatching/visitors
 - [x] Multiple occurences/@XmlArray
 - [ ] All group
-- [ ] Explicit sequence subgroups
-- [ ] Attribute groups
+- [x] Explicit sequence subgroups
+- [x] Attribute groups
 - [ ] Single namespace context
 - [ ] Multiple namespace context
 - [ ] No/Default namespace context
@@ -22,6 +22,7 @@ XsdSchema-aware XML serializer for TypeScript
 - [ ] nullable elements
 - [ ] nullable attributes
 - [ ] default values
+  - [x] default&required for attributes
 - [ ] inheritance, instantiation and xsi
 - [ ] literal SimpleType value formatting/parsing
 - [ ] literal SimpleType validation
