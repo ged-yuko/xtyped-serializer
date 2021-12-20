@@ -2,7 +2,7 @@ import { XsdSchema } from './xsdschema2'
 import xs from './serializer'
 import * as ts from './ts-dom'
 import { foreachSeparating, IndentedStringBuilder } from './utils'
-import { XmlNamespaceModel } from './content-model'
+import { XmlDataModel } from './content-model'
 
 
 class SourceTextBuilder implements ts.ITsSourceUnitMemberVisitor<IndentedStringBuilder, void>,
@@ -100,14 +100,14 @@ class SourceTextBuilder implements ts.ITsSourceUnitMemberVisitor<IndentedStringB
 
 class ContentModelBuilder {
 
-    public static collect(schema: XsdSchema): XmlNamespaceModel[] {
+    public static collect(schema: XsdSchema): XmlDataModel[] {
         throw new Error('ContentModelBuilder not implemented');
     }
 }
 
 class SourceModelBuilder {
 
-    public static collect(ns: XmlNamespaceModel): ts.TsSourceUnit {
+    public static collect(ns: XmlDataModel): ts.TsSourceUnit {
         throw new Error('SourceModelBuilder not implemented');
     }
 }
@@ -121,7 +121,9 @@ export default {
         const sources = models.map(m => SourceModelBuilder.collect(m));
         const sourceText = sources.map(s => SourceTextBuilder.format(s)).join('');
         */
-        const sourceText = xs.serialize(xs.deserialize(schemaText, XsdSchema));
+        const xsd = xs.deserialize(schemaText, XsdSchema);
+        // console.warn(JSON.stringify(xsd, null, '  '));
+        const sourceText = xs.serialize(xsd);
         return sourceText;
     }
 };

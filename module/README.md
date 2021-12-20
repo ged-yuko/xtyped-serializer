@@ -10,10 +10,14 @@ XsdSchema-aware XML serializer for TypeScript
 - [ ] All group
 - [x] Explicit sequence subgroups
 - [x] Attribute groups
-- [ ] Single namespace context
-- [ ] Multiple namespace context
-- [ ] No/Default namespace context
-- [ ] Qualifiedness
+- [x] Single namespace context
+  - [ ] tests?
+- [x] Multiple namespace context 
+  - [ ] tests?
+- [x] No/Default namespace context
+  - [ ] tests?
+- [x] Qualifiedness
+  - [ ] tests?
 - [ ] ComplexType extension
 - [ ] ComplexType restriction
 - [ ] ComplexType mixed content
@@ -32,6 +36,7 @@ XsdSchema-aware XML serializer for TypeScript
 - [ ] import
 
 **Package and functionality**
+- [ ] builtin tests based on W3C XSD Schema
 - [ ] content model caching
 - [ ] package build process review (namespacing, components and such)
 - [ ] classes generator
@@ -41,3 +46,27 @@ XsdSchema-aware XML serializer for TypeScript
   - [ ] as executable task
     - [x] xtg using ts-node
   - [ ] vscode integration (see https://github.com/microsoft/TypeScript/wiki/Using-the-Compiler-API)
+
+**Known issues**
+- [ ] XsdSchema processing issues
+  - [ ] simple type restrictions in xsdschema model
+  - [ ] path matching flaws
+    - [ ] excessive annotations
+    - [ ] see complexType "anyType" and "appinfo" definitions
+      ```xml
+        ...
+        <xs:complexType name="anyType" mixed="true">
+          <xs:sequence>
+            <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+          </xs:sequence>
+          <xs:anyAttribute processContents="lax"/>
+        </xs:complexType>
+        ...
+        <xs:complexType name="anyType" mixed="true">
+          <xs:sequence>
+            <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+          </xs:sequence>
+          <xs:anyAttribute processContents="lax"/>
+        </xs:complexType>
+        ...
+      ```

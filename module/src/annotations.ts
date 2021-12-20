@@ -2,6 +2,9 @@
 //#region metamodel
 
 //export type MyConstructor = new(...args: Array<any>) => any;
+
+export type AnyCtor = new (...args: any[]) => any;
+export type AnyCtorOf<T> = new (...args: any[]) => T;
 export type CtorOf<T> = new() => T;
 export type DefaultCtor = new() => any;
 /*
@@ -33,16 +36,23 @@ export interface IXmlPartOccurenceParameters {
 }
 
 export interface IXmlRootParameters extends IXmlModelItemReference {
+    readonly attributeQualified?: boolean,
+    readonly elementQualified?: boolean,
+    readonly preferredPrefix?: string;
 }
 
 export interface IXmlAttributeParameters extends IXmlModelItemReference {
     readonly type?: IXmlModelTypeReference;
     readonly default?: any;
     readonly required?: boolean;
+    readonly qualified?: boolean;
+    readonly preferredPrefix?: string;
 }
 
 export interface IXmlElementParameters extends IXmlModelItemReference, IXmlPartOccurenceParameters {
     readonly type?: IXmlModelTypeReference;
+    readonly qualified?: boolean;
+    readonly preferredPrefix?: string;
 }
 
 export interface IXmlComplexTypeParameters extends IXmlModelItemReference {
