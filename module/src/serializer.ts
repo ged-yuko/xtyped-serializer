@@ -324,7 +324,7 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
 
     visitXmlElement(model: m.XmlElementModel, arg: XmlDomToObjCtx): XmlDomToObjCtx[] {
         const element = this._elements[arg.pos];
-        if (arg.pos < this._elements.length && model.elementName === element.localName && model.form.namespace === (element.namespaceURI ?? '')) {
+        if (arg.pos < this._elements.length && model.elementName === element.localName && model.form.namespace === (element.namespaceURI ?? '')) { // TODO think about qualifiedness here
             return [arg.advance(model)];
         } else {
             return [];
@@ -466,26 +466,7 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
             // }
 
             if (contentSteps.length !== 1) {
-                const contentSteps = mapper.visit(XmlDomToObjCtx.initial(model), model.content.getSequence());
-
-                const tre = contentSteps.map(t => collectTree(t, s => s.childs, s => s.part.toString() + ' @' + s.pos));
-
-                const sb = new IndentedStringBuilder();
-                sb.appendLine(`Invalid document at line ${node.lineNumber}:${node.columnNumber} having`).push();
-                sb.appendLine().push();
-                sb.appendLine(node.outerHTML).pop();
-                sb.appendLine();
-                sb.appendLine(`while expected`).push();
-                sb.appendLine(model.content.getSequence().toStringDescribe()).pop();
-                sb.appendLine(`but got ${contentSteps.length} of paths`).push();
-                if (tre.length > 0) {
-                    sb.appendLine();
-                    tre.forEach(t => sb.appendLine(t));
-                } else {
-                    sb.appendLine(`nothing nice`);
-                }
-
-                console.warn(sb.stringify());
+                console.warn(this.collectDebugInfo(node, contentSteps, model)); 
             } else {
                 this.mapElementAttributes(node, obj, model.content);
                 XmlDomToObjMapper.fillObj(elements, obj, contentSteps[0]);
@@ -498,16 +479,33 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
         }        
     }
 
+    private static collectDebugInfo(node: Element, contentSteps: XmlDomToObjCtx[], model: m.XmlElementModel) : string {
+        const tre = contentSteps.map(t => collectTree(t, s => s.childs, s => s.part.toString() + ' @' + s.pos));
+
+        const sb = new IndentedStringBuilder();
+        sb.appendLine(`Invalid document at line ${node.lineNumber}:${node.columnNumber} having`).push();
+        sb.appendLine().push();
+        sb.appendLine(node.outerHTML).pop();
+        sb.appendLine();
+        sb.appendLine(`while expected`).push();
+        sb.appendLine(model.content.getSequence().toStringDescribe()).pop();
+        sb.appendLine(`but got ${contentSteps.length} of paths`).push();
+        if (tre.length > 0) {
+            sb.appendLine();
+            tre.forEach(t => sb.appendLine(t));
+        } else {
+            sb.appendLine(`nothing nice`);
+        }
+
+        return sb.stringify();
+    }
+
     private static mapElementAttributes(node: Element, obj: any, model: m.XmlAttrsContainerModel) {
         for (const attr of model.getAttributes()) {
             // const value = node.getAttributeNS(attr.form.namespace, attr.attributeName);
             const prefix = attr.form.qualified ? (node.lookupPrefix(attr.form.namespace) + ':') : '';
-            const value = node.getAttribute(prefix + attr.attributeName);
-            if (value) {
-                Reflect.set(obj, attr.propertyName, value);
-            } else if (attr.defaultValue) {
-                Reflect.set(obj, attr.propertyName, attr.defaultValue);
-            }
+            const value = node.getAttribute(prefix + attr.attributeName) ?? attr.defaultValue;
+            Reflect.set(obj, attr.propertyName, value);
         }
         for (const agroup of model.getAttributeGroups()) {
             const value = new agroup.typeCtor();
@@ -557,6 +555,10 @@ class XmlnsCtx {
         }
 
         return new XmlnsCtx(prefix, namespace, byNs, byPrefix, this.counter);
+    }
+
+    public setCurrFrom(other: XmlnsCtx) {
+        return new XmlnsCtx(other.currPrefix, other.currNs, this.prefixByNs, this.nsByPrefix, this.counter);
     }
 
     public getPrefixFor(part: m.IXmlContentPart) : XmlNsPrefixInfo {
@@ -616,6 +618,13 @@ class XmlObjToDomCtx {
 
     public enter(element: Element, key: string, obj: any) : XmlObjToDomCtx {
         return new XmlObjToDomCtx(this, element, key, obj, this.xmlns);
+    }
+    public exitPreserveXmlns() : XmlObjToDomCtx {
+        if (!this.parent) {
+            throw new Error('Invalid operation during object to XML DOM mapping');
+        }
+        
+        return new XmlObjToDomCtx(this.parent.parent, this.parent.element, this.parent.key, this.parent.obj, this.xmlns.setCurrFrom(this.parent.xmlns));
     }
 
     private newNs(xmlns: XmlnsCtx) : XmlObjToDomCtx {
@@ -698,29 +707,9 @@ class XmlObjToDomMapper implements m.IXmlContentPartModelVisitor<XmlObjToDomCtx,
     }
 
     private fillElement(model: m.XmlElementModel, arg: XmlObjToDomCtx) {
-        this.fillElementAttributes(arg.element, arg.obj, model.content, arg);
+        // arg =  // TODO namespace context seems fckd with attributes
+        XmlObjToDomAttributeMapper.fillElementAttributes(model, arg);
         this.visit(model.content.getSequence(), arg);
-    }
-
-    private fillElementAttributes(element: Element, obj: any, model: m.XmlAttrsContainerModel, arg: XmlObjToDomCtx): XmlObjToDomCtx {
-        for (const attrModel of model.getAttributes()) {
-            const pp = arg.getPrefixFor(attrModel);
-            arg = pp.ctx;
-            const prefix = pp.prefix.length > 0 ? pp.prefix + ':' : '';
-            const value = Reflect.get(obj, attrModel.propertyName);
-            if ((value && !attrModel.defaultValue) || (attrModel.defaultValue && value !== attrModel.defaultValue)) {
-                element.setAttributeNS(attrModel.form.namespace, prefix + attrModel.attributeName, '' + value); // TODO sophisticated simpleTypes
-            } else if (attrModel.required) {
-                element.setAttributeNS(attrModel.form.namespace, prefix + attrModel.attributeName, '');
-            }
-        }
-        for (const groupModel of model.getAttributeGroups()) {
-            const value  = Reflect.get(obj, groupModel.propertyName);
-            if (value) {
-                arg = this.fillElementAttributes(element, value, groupModel, arg);
-            }
-        }
-        return arg;
     }
 
     public static mapElement(node: Element, obj: any, model: m.XmlElementModel, xmlns: XmlnsCtx) {
@@ -728,6 +717,53 @@ class XmlObjToDomMapper implements m.IXmlContentPartModelVisitor<XmlObjToDomCtx,
     }
 
     visitXmlAttribute(model: m.XmlAttributeModel, arg: XmlObjToDomCtx): void { throw new Error("Method not implemented."); }
+}
+
+class XmlObjToDomAttributeMapper implements m.IXmlAttributeContentPartVisitor<XmlObjToDomCtx, XmlObjToDomCtx> {
+
+    private static Instance = new XmlObjToDomAttributeMapper();
+
+    private constructor() { 
+    }
+
+    visitXmlAttributeModel(attrModel: m.XmlAttributeModel, arg: XmlObjToDomCtx): XmlObjToDomCtx {
+        const pp = arg.getPrefixFor(attrModel);
+        arg = pp.ctx;
+        const prefix = pp.prefix.length > 0 ? pp.prefix + ':' : '';
+        const value = Reflect.get(arg.obj, attrModel.propertyName);
+        if ((value && !attrModel.defaultValue) || (attrModel.defaultValue && value !== attrModel.defaultValue)) {
+            arg.element.setAttributeNS(attrModel.form.namespace, prefix + attrModel.attributeName, '' + value); // TODO sophisticated simpleTypes
+        } else if (attrModel.required) {
+            arg.element.setAttributeNS(attrModel.form.namespace, prefix + attrModel.attributeName, '');
+        }
+        
+        return arg;
+    }
+    visitAttributeGroupModel(groupModel: m.XmlAttributeGroupModel, arg: XmlObjToDomCtx): XmlObjToDomCtx {
+        const value  = Reflect.get(arg.obj, groupModel.propertyName);
+        if (value) {
+            arg = this.visitAttrsContainer(groupModel, arg.enter(arg.element, groupModel.propertyName, value)).exitPreserveXmlns();
+        }
+        return arg;
+    }
+    visitElementContentModel(elementContentModel: m.XmlElementContentModel, arg: XmlObjToDomCtx): XmlObjToDomCtx {
+        return this.visitAttrsContainer(elementContentModel, arg);
+    }
+
+    private visitAttrsContainer(partModel: m.XmlAttrsContainerModel, arg: XmlObjToDomCtx): XmlObjToDomCtx {
+        for (const groupModel of partModel.getAllAttributeParts()) {
+            arg = this.visit(groupModel, arg);
+        }    
+        return arg;
+    }
+
+    private visit(part: m.IXmlAttributeContentPart, arg: XmlObjToDomCtx): XmlObjToDomCtx {
+        return part.applyAttrContentPartVisitor(this, arg);
+    }
+
+    public static fillElementAttributes(model: m.XmlElementModel, ctx: XmlObjToDomCtx): XmlObjToDomCtx {
+        return XmlObjToDomAttributeMapper.Instance.visit(model.content, ctx);
+    }
 }
 
 //#endregion

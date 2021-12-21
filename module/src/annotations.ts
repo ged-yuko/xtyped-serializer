@@ -381,11 +381,11 @@ export function XmlSimpleType(params?: IXmlSimpleTypeParameters) {
     }
 }
 
-export function XmlEnumerationValues<E extends Record<Extract<keyof E, any>, any>>(mapping: E) {
+export function XmlEnumerationValues<E extends Record<Extract<keyof E, any>, any>>(enumType: E) {
     return function(target: any, propertyKey: string) : void {
 
         const entries = new Map<string, any>();
-        for (const [k, v] of Object.entries(mapping)) {
+        for (const [k, v] of Object.entries(enumType)) {
             entries.set(k, v);
         }
 

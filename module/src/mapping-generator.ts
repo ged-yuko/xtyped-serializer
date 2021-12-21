@@ -1,5 +1,6 @@
 import { XsdSchema } from './xsdschema2'
 import xs from './serializer'
+import * as fs from 'fs'
 import * as ts from './ts-dom'
 import { foreachSeparating, IndentedStringBuilder } from './utils'
 import { XmlDataModel } from './content-model'
@@ -123,6 +124,7 @@ export default {
         */
         const xsd = xs.deserialize(schemaText, XsdSchema);
         // console.warn(JSON.stringify(xsd, null, '  '));
+        // fs.writeFileSync(".\\out.json", JSON.stringify(xsd, null, '  '));
         const sourceText = xs.serialize(xsd);
         return sourceText;
     }

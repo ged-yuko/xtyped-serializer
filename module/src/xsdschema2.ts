@@ -48,6 +48,8 @@ export class XsdDocumentation {
 //   </xs:complexType>
 @XmlComplexType({name: 'anyType'})                                                              // ok
 export class XsdAnyType {  
+    private _type = this.constructor.name;
+
     @XmlNode(XmlNodeAssociationKind.Element)
     rawNode: Element;
 }
@@ -187,6 +189,238 @@ export interface IXsdFacets {
     // TODO IXsdFacets
 }
 
+//   <xs:complexType name="facet">
+//     <xs:complexContent>
+//       <xs:extension base="xs:annotated">
+//         <xs:attribute name="value" use="required"/>
+//         <xs:attribute name="fixed" type="xs:boolean" use="optional" default="false"/>
+//       </xs:extension>
+//     </xs:complexContent>
+//   </xs:complexType>
+@XmlComplexType({name: 'facet'})
+export class XsdFacet extends XsdAnnotated {
+}
+@XmlComplexType()
+export class XsdFacetImpl extends XsdFacet {
+    @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
+    annotation: XsdAnnotation;
+
+    @XmlAttribute({required: true})
+    value: string;
+
+    @XmlAttribute({default: false})
+    fixed: string;
+}
+
+//   <xs:complexType name="noFixedFacet">
+//     <xs:complexContent>
+//       <xs:restriction base="xs:facet">
+//         <xs:sequence>
+//           <xs:element ref="xs:annotation" minOccurs="0"/>
+//         </xs:sequence>
+//         <xs:attribute name="fixed" use="prohibited"/>
+//         <xs:anyAttribute namespace="##other" processContents="lax"/>
+//       </xs:restriction>
+//     </xs:complexContent>
+//   </xs:complexType>
+@XmlComplexType({name: 'noFixedFacet'})
+export class XsdNoFixedFacet extends XsdFacet {
+    @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
+    annotation: XsdAnnotation;
+
+    @XmlAttribute({required: true})
+    value: string;
+}
+
+//   <xs:element name="minExclusive" id="minExclusive" type="xs:facet">
+//     <xs:annotation>
+//       <xs:documentation source="http://www.w3.org/TR/xmlschema-2/#element-minExclusive"/>
+//     </xs:annotation>
+//   </xs:element>
+@XmlComplexType()
+export class XsdMinExclusive extends XsdFacetImpl {
+}
+//   <xs:element name="minInclusive" id="minInclusive" type="xs:facet">
+//     <xs:annotation>
+//       <xs:documentation source="http://www.w3.org/TR/xmlschema-2/#element-minInclusive"/>
+//     </xs:annotation>
+//   </xs:element>
+@XmlComplexType()
+export class XsdMinInclusive extends XsdFacetImpl {
+}
+
+//   <xs:element name="maxExclusive" id="maxExclusive" type="xs:facet">
+//     <xs:annotation>
+//       <xs:documentation source="http://www.w3.org/TR/xmlschema-2/#element-maxExclusive"/>
+//     </xs:annotation>
+//   </xs:element>
+@XmlComplexType()
+export class XsdMaxExclusive extends XsdFacetImpl {
+}
+//   <xs:element name="maxInclusive" id="maxInclusive" type="xs:facet">
+//     <xs:annotation>
+//       <xs:documentation source="http://www.w3.org/TR/xmlschema-2/#element-maxInclusive"/>
+//     </xs:annotation>
+//   </xs:element>
+@XmlComplexType()
+export class XsdMaxInclusive extends XsdFacetImpl {
+}
+
+//   <xs:complexType name="numFacet">
+//     <xs:complexContent>
+//       <xs:restriction base="xs:facet">
+//         <xs:sequence>
+//           <xs:element ref="xs:annotation" minOccurs="0"/>
+//         </xs:sequence>
+//         <xs:attribute name="value" type="xs:nonNegativeInteger" use="required"/>
+//         <xs:anyAttribute namespace="##other" processContents="lax"/>
+//       </xs:restriction>
+//     </xs:complexContent>
+//   </xs:complexType>
+@XmlComplexType({name: 'numFacet'})
+export class XsdNumFacet extends XsdFacet{
+    @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
+    annotation: XsdAnnotation;
+    
+    @XmlAttribute({required: true})
+    value: string;
+
+    @XmlAttribute({default: false})
+    fixed: string;
+}
+
+//   <xs:element name="totalDigits" id="totalDigits">
+//     <xs:annotation>
+//       <xs:documentation source="http://www.w3.org/TR/xmlschema-2/#element-totalDigits"/>
+//     </xs:annotation>
+//     <xs:complexType>
+//       <xs:complexContent>
+//         <xs:restriction base="xs:numFacet">
+//           <xs:sequence>
+//             <xs:element ref="xs:annotation" minOccurs="0"/>
+//           </xs:sequence>
+//           <xs:attribute name="value" type="xs:positiveInteger" use="required"/>
+//           <xs:anyAttribute namespace="##other" processContents="lax"/>
+//         </xs:restriction>
+//       </xs:complexContent>
+//     </xs:complexType>
+//   </xs:element>
+@XmlComplexType()
+export class XsdTotalDigits extends XsdNumFacet {
+}
+
+//   <xs:element name="fractionDigits" id="fractionDigits" type="xs:numFacet">
+//     <xs:annotation>
+//       <xs:documentation source="http://www.w3.org/TR/xmlschema-2/#element-fractionDigits"/>
+//     </xs:annotation>
+//   </xs:element>
+@XmlComplexType()
+export class XsdFractionDigits extends XsdNumFacet {
+}
+
+//   <xs:element name="length" id="length" type="xs:numFacet">
+//     <xs:annotation>
+//       <xs:documentation source="http://www.w3.org/TR/xmlschema-2/#element-length"/>
+//     </xs:annotation>
+//   </xs:element>
+@XmlComplexType()
+export class XsdLength extends XsdNumFacet {
+}
+
+//   <xs:element name="minLength" id="minLength" type="xs:numFacet">
+//     <xs:annotation>
+//       <xs:documentation source="http://www.w3.org/TR/xmlschema-2/#element-minLength"/>
+//     </xs:annotation>
+//   </xs:element>
+@XmlComplexType()
+export class XsdMinLength extends XsdNumFacet {
+}
+
+//   <xs:element name="maxLength" id="maxLength" type="xs:numFacet">
+//     <xs:annotation>
+//       <xs:documentation source="http://www.w3.org/TR/xmlschema-2/#element-maxLength"/>
+//     </xs:annotation>
+//   </xs:element>
+@XmlComplexType()
+export class XsdMaxLength extends XsdNumFacet {
+}
+
+//   <xs:element name="enumeration" id="enumeration" type="xs:noFixedFacet">
+//     <xs:annotation>
+//       <xs:documentation source="http://www.w3.org/TR/xmlschema-2/#element-enumeration"/>
+//     </xs:annotation>
+//   </xs:element>
+@XmlComplexType()
+export class XsdEnumeration extends XsdNoFixedFacet {
+}
+
+//   <xs:element name="whiteSpace" id="whiteSpace">
+//     <xs:annotation>
+//       <xs:documentation source="http://www.w3.org/TR/xmlschema-2/#element-whiteSpace"/>
+//     </xs:annotation>
+//     <xs:complexType>
+//       <xs:complexContent>
+//         <xs:restriction base="xs:facet">
+//           <xs:sequence>
+//             <xs:element ref="xs:annotation" minOccurs="0"/>
+//           </xs:sequence>
+//           <xs:attribute name="value" use="required">
+//             <xs:simpleType>
+//               <xs:restriction base="xs:NMTOKEN">
+//                 <xs:enumeration value="preserve"/>
+//                 <xs:enumeration value="replace"/>
+//                 <xs:enumeration value="collapse"/>
+//               </xs:restriction>
+export enum XsdWhitespaceMode {
+    Preserve = 'preserve',
+    Replace = 'replace',
+    Collapse = 'collapse'
+}
+@XmlSimpleType()
+class XsdWhitespaceModeType {
+    @XmlEnumerationValues(XsdWhitespaceMode)
+    enumeration: XsdWhitespaceMode;
+}
+//             </xs:simpleType>
+//           </xs:attribute>
+//           <xs:anyAttribute namespace="##other" processContents="lax"/>
+//         </xs:restriction>
+//       </xs:complexContent>
+//     </xs:complexType>
+//   </xs:element>
+@XmlComplexType()
+export class XsdWhitespace extends XsdFacet {
+    @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
+    annotation: XsdAnnotation;
+
+    @XmlAttribute({required: true})
+    value: XsdWhitespaceMode;
+
+    @XmlAttribute({default: false})
+    fixed: string;
+}
+
+//   <xs:element name="pattern" id="pattern">
+//     <xs:annotation>
+//       <xs:documentation source="http://www.w3.org/TR/xmlschema-2/#element-pattern"/>
+//     </xs:annotation>
+//     <xs:complexType>
+//       <xs:complexContent>
+//         <xs:restriction base="xs:noFixedFacet">
+//           <xs:sequence>
+//             <xs:element ref="xs:annotation" minOccurs="0"/>
+//           </xs:sequence>
+//           <xs:attribute name="value" type="xs:string" use="required"/>
+//           <xs:anyAttribute namespace="##other" processContents="lax"/>
+//         </xs:restriction>
+//       </xs:complexContent>
+//     </xs:complexType>
+//   </xs:element>
+@XmlComplexType()
+export class XsdPattern extends XsdNoFixedFacet {
+}
+
+
 //   <xs:group name="simpleRestrictionModel">
 //     <xs:sequence>
 //       <xs:element name="simpleType" type="xs:localSimpleType" minOccurs="0"/>
@@ -200,18 +434,18 @@ export class XsdSimpleRestrictionModel {
     simpleType: XsdLocalSimpleType;
 
     @XmlChoice({order: 2, minOccurs: 0, maxOccurs: 'unbounded'})
-    @XmlElement({name: 'minExclusive'})
-    @XmlElement({name: 'minInclusive'})
-    @XmlElement({name: 'maxExclusive'})
-    @XmlElement({name: 'maxInclusive'})
-    @XmlElement({name: 'totalDigits'})
-    @XmlElement({name: 'fractionDigits'})
-    @XmlElement({name: 'length'})
-    @XmlElement({name: 'minLength'})
-    @XmlElement({name: 'maxLength'})
-    @XmlElement({name: 'enumeration'})
-    @XmlElement({name: 'whiteSpace'})
-    @XmlElement({name: 'pattern'})
+    @XmlElement({name: 'minExclusive', type: { ctor: () => XsdMinExclusive}})
+    @XmlElement({name: 'minInclusive', type: { ctor: () => XsdMinInclusive}})
+    @XmlElement({name: 'maxExclusive', type: { ctor: () => XsdMaxExclusive}})
+    @XmlElement({name: 'maxInclusive', type: { ctor: () => XsdMaxInclusive}})
+    @XmlElement({name: 'totalDigits', type: { ctor: () => XsdTotalDigits}})
+    @XmlElement({name: 'fractionDigits', type: { ctor: () => XsdFractionDigits}})
+    @XmlElement({name: 'length', type: { ctor: () => XsdLength}})
+    @XmlElement({name: 'minLength', type: { ctor: () => XsdMinLength}})
+    @XmlElement({name: 'maxLength', type: { ctor: () => XsdMaxLength}})
+    @XmlElement({name: 'enumeration', type: { ctor: () => XsdEnumeration}})
+    @XmlElement({name: 'whiteSpace', type: { ctor: () => XsdWhitespace}})
+    @XmlElement({name: 'pattern', type: { ctor: () => XsdPattern}})
     facets = new Array<IXsdFacets>();
 }
 

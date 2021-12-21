@@ -63,10 +63,19 @@ export interface IXmlContentPart {
     form: XmlPartFormInfo;    
 }
 
+export interface IXmlAttributeContentPartVisitor<T, TRet> {
+    visitElementContentModel(elementContentModel: XmlElementContentModel, arg: T): TRet;
+    visitXmlAttributeModel(attrModel: XmlAttributeModel, arg: T): TRet;
+    visitAttributeGroupModel(groupModel: XmlAttributeGroupModel, arg: T): TRet;
+}
+export interface IXmlAttributeContentPart {
+    applyAttrContentPartVisitor<T, TRet>(visitor: IXmlAttributeContentPartVisitor<T, TRet>, arg: T): TRet;
+}
+
 export interface IXmlValueModelVisitor<T, TRet> {
-    visitNumberValue(arg0: XmlNumberValueModel, arg: T): TRet;
-    visitBooleanValue(arg0: XmlBooleanValueModel, arg: T): TRet;
-    visitStringValue(arg0: XmlStringValueModel, arg: T): TRet;
+    visitNumberValue(num: XmlNumberValueModel, arg: T): TRet;
+    visitBooleanValue(bool: XmlBooleanValueModel, arg: T): TRet;
+    visitStringValue(str: XmlStringValueModel, arg: T): TRet;
 }
 
 export abstract class XmlValueModel {
@@ -204,7 +213,7 @@ export abstract class XmlContentPartModel {
     }
 }
 
-export class XmlAttributeModel extends XmlContentPartModel implements IXmlContentPart{
+export class XmlAttributeModel extends XmlContentPartModel implements IXmlContentPart, IXmlAttributeContentPart {
     
     public constructor(
         public readonly propertyName: string,
@@ -217,6 +226,7 @@ export class XmlAttributeModel extends XmlContentPartModel implements IXmlConten
     }
 
     protected applyImpl<T, TRet>(visitor: IXmlContentPartModelVisitor<T, TRet>, arg: T): TRet { return visitor.visitXmlAttribute(this, arg); }
+    public applyAttrContentPartVisitor<T, TRet>(visitor: IXmlAttributeContentPartVisitor<T, TRet>, arg: T): TRet { return visitor.visitXmlAttributeModel(this, arg); }
 }
 
 export abstract class XmlElementPartModel extends XmlContentPartModel {
@@ -493,6 +503,7 @@ class XmlElementContentFsmBuilder implements IXmlContentPartModelVisitor<any, Co
 
 export abstract class XmlAttrsContainerModel {
     // private _partsByProp = new Map<string, XmlAttrsContainerModel>();
+    private _allAttrParts = new Array<IXmlAttributeContentPart>();
     private _attrs = new Array<XmlAttributeModel>();
     private _groups = new Array<XmlAttributeGroupModel>();
 
@@ -503,30 +514,37 @@ export abstract class XmlAttrsContainerModel {
     public getAttributeGroups() : ReadonlyArray<XmlAttributeGroupModel> {
         return this._groups;
     }
+    public getAllAttributeParts() : ReadonlyArray<IXmlAttributeContentPart> {
+        return this._allAttrParts;
+    }
 
     public registerAttribute(propertyName: string, elementName: string, formInfo: XmlPartFormInfo, defaultValue: any|undefined, required: boolean) : XmlAttributeModel {
         const attr = new XmlAttributeModel(propertyName, elementName, formInfo, defaultValue, required); // TODO: attribute namespace
         this._attrs.push(attr);
+        this._allAttrParts.push(attr);
         return attr;
     }
 
     public registerAttrsGroup(propertyName: string, typeCtor: DefaultCtor) : XmlAttributeGroupModel {
         const group = new XmlAttributeGroupModel(propertyName, typeCtor);
         this._groups.push(group);
+        this._allAttrParts.push(group);
         return group;
     }
 }
 
-export class XmlAttributeGroupModel extends XmlAttrsContainerModel {
+export class XmlAttributeGroupModel extends XmlAttrsContainerModel implements IXmlAttributeContentPart {
     public constructor(
         public readonly propertyName: string,
         public readonly typeCtor: DefaultCtor
     ) {
         super();
     }
+
+    public applyAttrContentPartVisitor<T, TRet>(visitor: IXmlAttributeContentPartVisitor<T, TRet>, arg: T): TRet { return visitor.visitAttributeGroupModel(this, arg); }
 }
 
-export class XmlElementContentModel extends XmlAttrsContainerModel {
+export class XmlElementContentModel extends XmlAttrsContainerModel implements IXmlAttributeContentPart  {
     private _sequence: XmlElementSequenceGroupModel;
     private _isMixed = false;
     private _fsm: XmlElementContentFsm;
@@ -546,6 +564,8 @@ export class XmlElementContentModel extends XmlAttrsContainerModel {
     public getSequence() {
         return this._sequence;
     }
+
+    public applyAttrContentPartVisitor<T, TRet>(visitor: IXmlAttributeContentPartVisitor<T, TRet>, arg: T): TRet { return visitor.visitElementContentModel(this, arg); }
 }
 
 export class XmlElementModel extends XmlElementPartModel implements IXmlContentPart {

@@ -46,27 +46,10 @@ XsdSchema-aware XML serializer for TypeScript
   - [ ] as executable task
     - [x] xtg using ts-node
   - [ ] vscode integration (see https://github.com/microsoft/TypeScript/wiki/Using-the-Compiler-API)
+- [ ] move to fsm-based element content recognition maybe
 
 **Known issues**
-- [ ] XsdSchema processing issues
-  - [ ] simple type restrictions in xsdschema model
-  - [ ] path matching flaws
+- [ ] namespace context should be preserved after attributes mapping during serialization
+- [ ] sometimes incorrect element context object during serialization (see following XsdSchema processing issues)
     - [ ] excessive annotations
-    - [ ] see complexType "anyType" and "appinfo" definitions
-      ```xml
-        ...
-        <xs:complexType name="anyType" mixed="true">
-          <xs:sequence>
-            <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
-          </xs:sequence>
-          <xs:anyAttribute processContents="lax"/>
-        </xs:complexType>
-        ...
-        <xs:complexType name="anyType" mixed="true">
-          <xs:sequence>
-            <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
-          </xs:sequence>
-          <xs:anyAttribute processContents="lax"/>
-        </xs:complexType>
-        ...
-      ```
+    - [ ] see a number of definitions (complexType "anyType", element "appinfo", element "documentation")
