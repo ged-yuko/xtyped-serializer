@@ -323,7 +323,8 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
     }
 
     visitXmlElement(model: m.XmlElementModel, arg: XmlDomToObjCtx): XmlDomToObjCtx[] {
-        if (arg.pos < this._elements.length && model.elementName  === this._elements[arg.pos].localName) {
+        const element = this._elements[arg.pos];
+        if (arg.pos < this._elements.length && model.elementName === element.localName && model.form.namespace === (element.namespaceURI ?? '')) { // TODO think about qualifiedness here
             return [arg.advance(model)];
         } else {
             return [];
@@ -465,26 +466,7 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
             // }
 
             if (contentSteps.length !== 1) {
-                const contentSteps = mapper.visit(XmlDomToObjCtx.initial(model), model.content.getSequence());
-
-                const tre = contentSteps.map(t => collectTree(t, s => s.childs, s => s.part.toString() + ' @' + s.pos));
-
-                const sb = new IndentedStringBuilder();
-                sb.appendLine(`Invalid document at line ${node.lineNumber}:${node.columnNumber} having`).push();
-                sb.appendLine().push();
-                sb.appendLine(node.outerHTML).pop();
-                sb.appendLine();
-                sb.appendLine(`while expected`).push();
-                sb.appendLine(model.content.getSequence().toStringDescribe()).pop();
-                sb.appendLine(`but got ${contentSteps.length} of paths`).push();
-                if (tre.length > 0) {
-                    sb.appendLine();
-                    tre.forEach(t => sb.appendLine(t));
-                } else {
-                    sb.appendLine(`nothing nice`);
-                }
-
-                console.warn(sb.stringify());
+                console.warn(this.collectDebugInfo(node, contentSteps, model)); 
             } else {
                 this.mapElementAttributes(node, obj, model.content);
                 XmlDomToObjMapper.fillObj(elements, obj, contentSteps[0]);
@@ -497,14 +479,33 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
         }        
     }
 
+    private static collectDebugInfo(node: Element, contentSteps: XmlDomToObjCtx[], model: m.XmlElementModel) : string {
+        const tre = contentSteps.map(t => collectTree(t, s => s.childs, s => s.part.toString() + ' @' + s.pos));
+
+        const sb = new IndentedStringBuilder();
+        sb.appendLine(`Invalid document at line ${node.lineNumber}:${node.columnNumber} having`).push();
+        sb.appendLine().push();
+        sb.appendLine(node.outerHTML).pop();
+        sb.appendLine();
+        sb.appendLine(`while expected`).push();
+        sb.appendLine(model.content.getSequence().toStringDescribe()).pop();
+        sb.appendLine(`but got ${contentSteps.length} of paths`).push();
+        if (tre.length > 0) {
+            sb.appendLine();
+            tre.forEach(t => sb.appendLine(t));
+        } else {
+            sb.appendLine(`nothing nice`);
+        }
+
+        return sb.stringify();
+    }
+
     private static mapElementAttributes(node: Element, obj: any, model: m.XmlAttrsContainerModel) {
         for (const attr of model.getAttributes()) {
-            const value = node.getAttributeNS(null, attr.attributeName);
-            if (value) {
-                Reflect.set(obj, attr.propertyName, value);
-            } else if (attr.defaultValue) {
-                Reflect.set(obj, attr.propertyName, attr.defaultValue);
-            }
+            // const value = node.getAttributeNS(attr.form.namespace, attr.attributeName);
+            const prefix = attr.form.qualified ? (node.lookupPrefix(attr.form.namespace) + ':') : '';
+            const value = node.getAttribute(prefix + attr.attributeName) ?? attr.defaultValue;
+            Reflect.set(obj, attr.propertyName, value);
         }
         for (const agroup of model.getAttributeGroups()) {
             const value = new agroup.typeCtor();
@@ -516,21 +517,128 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
     visitXmlAttribute(model: m.XmlAttributeModel, arg: XmlDomToObjCtx): XmlDomToObjCtx[] { throw new Error("Method not implemented."); }
 }
 
+class XmlnsCounter {
+    private _value = 0;
+
+    public constructor() {
+    }
+
+    public nextValue() : number {
+        return ++this._value;
+    }
+}
+
+type XmlNsPrefixInfo = { prefix: string, declNeeded: boolean, nsctx: XmlnsCtx };
+
+class XmlnsCtx {
+    public constructor(
+        private readonly currPrefix: string,
+        private readonly currNs: string,
+        private readonly prefixByNs: Map<string, string>,
+        private readonly nsByPrefix: Map<string, string>,
+        private readonly counter: XmlnsCounter
+    ) {
+    }
+
+    private update(prefix: string, namespace: string, declNeeded: boolean) : XmlnsCtx {
+        let byNs;
+        let byPrefix;
+
+        if (declNeeded && prefix.length > 0) {
+            byNs = new Map(this.prefixByNs);
+            byPrefix = new Map(this.nsByPrefix);
+            byNs.set(namespace, prefix);
+            byPrefix.set(prefix, namespace);
+        } else {
+            byNs = this.prefixByNs;
+            byPrefix = this.nsByPrefix;
+        }
+
+        return new XmlnsCtx(prefix, namespace, byNs, byPrefix, this.counter);
+    }
+
+    public setCurrFrom(other: XmlnsCtx) {
+        return new XmlnsCtx(other.currPrefix, other.currNs, this.prefixByNs, this.nsByPrefix, this.counter);
+    }
+
+    public getPrefixFor(part: m.IXmlContentPart) : XmlNsPrefixInfo {
+        let prefix: string;
+        let declNeeded: boolean;
+
+        const existingPrefix = this.prefixByNs.get(part.form.namespace);
+        const oldNsOfPreferred = part.form.preferredPrefix ? this.nsByPrefix.get(part.form.preferredPrefix) : undefined;
+
+        if (part.form.namespace === this.currNs) {
+            prefix = this.currPrefix;
+            declNeeded = false;
+        } else if (existingPrefix) {
+            prefix = existingPrefix;
+            declNeeded = false;
+        } else if (part.form.preferredPrefix && (!oldNsOfPreferred || oldNsOfPreferred === part.form.namespace)) {
+            prefix = part.form.preferredPrefix;
+            declNeeded = !oldNsOfPreferred;
+        } else {
+            prefix = '';
+            declNeeded = true;
+        }
+
+        if (part.form.qualified) {
+            if (prefix.length == 0) {
+                prefix = 'ns' + this.counter.nextValue();
+                declNeeded = true;
+            }
+        } else {
+            if (this.currNs == part.form.namespace) {
+                prefix = '';
+                declNeeded = false;
+            }
+        }
+
+        const ctx = (declNeeded || part.form.namespace !== this.currNs || prefix != this.currPrefix) 
+                        ? this.update(prefix, part.form.namespace, declNeeded)
+                        : this;
+
+        return { prefix, declNeeded, nsctx: ctx };
+    }
+    
+    public static initial() : XmlnsCtx {
+        return new XmlnsCtx('', '', new Map(), new Map(), new XmlnsCounter());
+    }
+}
+
 class XmlObjToDomCtx {
     private constructor(
         public readonly parent: XmlObjToDomCtx|null,
         public readonly element: Element,
         public readonly key: string,
-        public readonly obj: any
+        public readonly obj: any,
+        public readonly xmlns: XmlnsCtx
     ){
     }
 
     public enter(element: Element, key: string, obj: any) : XmlObjToDomCtx {
-        return new XmlObjToDomCtx(this, element, key, obj);
+        return new XmlObjToDomCtx(this, element, key, obj, this.xmlns);
+    }
+    public exitPreserveXmlns() : XmlObjToDomCtx {
+        if (!this.parent) {
+            throw new Error('Invalid operation during object to XML DOM mapping');
+        }
+        
+        return new XmlObjToDomCtx(this.parent.parent, this.parent.element, this.parent.key, this.parent.obj, this.xmlns.setCurrFrom(this.parent.xmlns));
     }
 
-    public static initial(element: Element, obj: any) : XmlObjToDomCtx {
-        return new XmlObjToDomCtx(null, element, '', obj);
+    private newNs(xmlns: XmlnsCtx) : XmlObjToDomCtx {
+        return new XmlObjToDomCtx(this, this.element, this.key, this.obj, xmlns);
+    }
+
+    public getPrefixFor(part: m.IXmlContentPart) : { prefix: string, declNeeded: boolean, ctx: XmlObjToDomCtx } {
+        const result = this.xmlns.getPrefixFor(part);
+        const ctx = result.nsctx === this.xmlns ? this : this.newNs(result.nsctx);
+        return { prefix: result.prefix, declNeeded: result.declNeeded, ctx };
+    }
+
+    public static initial(element: Element, obj: any, xmlns: XmlnsCtx) : XmlObjToDomCtx {
+        return new XmlObjToDomCtx(null, element, '', obj, xmlns);
     }
 }
 
@@ -544,9 +652,11 @@ class XmlObjToDomMapper implements m.IXmlContentPartModelVisitor<XmlObjToDomCtx,
         if (rawValue) {
             const values = isArray(rawValue) ? rawValue : [rawValue];
             for (const value of values) {
-                const element = arg.element.ownerDocument.createElementNS(arg.element.namespaceURI, model.elementName); // TODO consider namespace switching
+                const pp = arg.getPrefixFor(model);
+                const prefix = pp.prefix.length > 0 ? pp.prefix + ':' : '';
+                const element = arg.element.ownerDocument.createElementNS(arg.element.namespaceURI, prefix + model.elementName);
                 arg.element.appendChild(element);
-                this.fillElement(model, arg.enter(element, model.propertyName, value));
+                this.fillElement(model, pp.ctx.enter(element, model.propertyName, value));
             }
         }
     }
@@ -597,54 +707,89 @@ class XmlObjToDomMapper implements m.IXmlContentPartModelVisitor<XmlObjToDomCtx,
     }
 
     private fillElement(model: m.XmlElementModel, arg: XmlObjToDomCtx) {
-        this.fillElementAttributes(arg.element, arg.obj, model.content);
+        // arg =  // TODO namespace context seems fckd with attributes
+        XmlObjToDomAttributeMapper.fillElementAttributes(model, arg);
         this.visit(model.content.getSequence(), arg);
     }
 
-    private fillElementAttributes(element: Element, obj: any, model: m.XmlAttrsContainerModel) {
-        for (const attrModel of model.getAttributes()) {
-            const value = Reflect.get(obj, attrModel.propertyName);
-            if ((value && !attrModel.defaultValue) || (attrModel.defaultValue && value !== attrModel.defaultValue)) {
-                    element.setAttributeNS(attrModel.namespace, attrModel.attributeName, '' + value); // TODO sophisticated simpleTypes
-            } else if (attrModel.required) {
-                element.setAttributeNS(attrModel.namespace, attrModel.attributeName, '');
-            }
-        }
-        for (const groupModel of model.getAttributeGroups()) {
-            const value  = Reflect.get(obj, groupModel.propertyName);
-            if (value) {
-                this.fillElementAttributes(element, value, groupModel);
-            }
-        }
-    }
-
-    public static mapElement(node: Element, obj: any, model: m.XmlElementModel) {
-        new XmlObjToDomMapper().fillElement(model, XmlObjToDomCtx.initial(node, obj));
+    public static mapElement(node: Element, obj: any, model: m.XmlElementModel, xmlns: XmlnsCtx) {
+        new XmlObjToDomMapper().fillElement(model, XmlObjToDomCtx.initial(node, obj, xmlns));
     }
 
     visitXmlAttribute(model: m.XmlAttributeModel, arg: XmlObjToDomCtx): void { throw new Error("Method not implemented."); }
 }
 
+class XmlObjToDomAttributeMapper implements m.IXmlAttributeContentPartVisitor<XmlObjToDomCtx, XmlObjToDomCtx> {
+
+    private static Instance = new XmlObjToDomAttributeMapper();
+
+    private constructor() { 
+    }
+
+    visitXmlAttributeModel(attrModel: m.XmlAttributeModel, arg: XmlObjToDomCtx): XmlObjToDomCtx {
+        const pp = arg.getPrefixFor(attrModel);
+        arg = pp.ctx;
+        const prefix = pp.prefix.length > 0 ? pp.prefix + ':' : '';
+        const value = Reflect.get(arg.obj, attrModel.propertyName);
+        if ((value && !attrModel.defaultValue) || (attrModel.defaultValue && value !== attrModel.defaultValue)) {
+            arg.element.setAttributeNS(attrModel.form.namespace, prefix + attrModel.attributeName, '' + value); // TODO sophisticated simpleTypes
+        } else if (attrModel.required) {
+            arg.element.setAttributeNS(attrModel.form.namespace, prefix + attrModel.attributeName, '');
+        }
+        
+        return arg;
+    }
+    visitAttributeGroupModel(groupModel: m.XmlAttributeGroupModel, arg: XmlObjToDomCtx): XmlObjToDomCtx {
+        const value  = Reflect.get(arg.obj, groupModel.propertyName);
+        if (value) {
+            arg = this.visitAttrsContainer(groupModel, arg.enter(arg.element, groupModel.propertyName, value)).exitPreserveXmlns();
+        }
+        return arg;
+    }
+    visitElementContentModel(elementContentModel: m.XmlElementContentModel, arg: XmlObjToDomCtx): XmlObjToDomCtx {
+        return this.visitAttrsContainer(elementContentModel, arg);
+    }
+
+    private visitAttrsContainer(partModel: m.XmlAttrsContainerModel, arg: XmlObjToDomCtx): XmlObjToDomCtx {
+        for (const groupModel of partModel.getAllAttributeParts()) {
+            arg = this.visit(groupModel, arg);
+        }    
+        return arg;
+    }
+
+    private visit(part: m.IXmlAttributeContentPart, arg: XmlObjToDomCtx): XmlObjToDomCtx {
+        return part.applyAttrContentPartVisitor(this, arg);
+    }
+
+    public static fillElementAttributes(model: m.XmlElementModel, ctx: XmlObjToDomCtx): XmlObjToDomCtx {
+        return XmlObjToDomAttributeMapper.Instance.visit(model.content, ctx);
+    }
+}
+
 //#endregion
 
-const nsCtxByType = new Map<string, Map<DefaultCtor, m.XmlNamespaceModel>>();
+const nsCtxByType = new Map<string, Map<DefaultCtor, m.XmlDataModel>>(); // TODO wtf
 
-const resolveModelForType = (ns: string, elname: string, type: DefaultCtor) => {
+const resolveModelForType = (ns: string, elname: string, type: DefaultCtor) => { // rewrite it for correct namespace handling
     let  nsByType = nsCtxByType.get(ns);
     if (!nsByType) {
-        nsByType = new Map<DefaultCtor, m.XmlNamespaceModel>();
+        nsByType = new Map<DefaultCtor, m.XmlDataModel>();
         nsCtxByType.set(ns, nsByType);
     } 
 
     let model = nsByType.get(type);
     if (!model) {
-        model = m.XmlNamespaceModel.makeForType(type);
+        model = m.XmlDataModel.makeForTypes(type);
         nsByType.set(type, model);
     }
 
     return model;
 }
 
+// function appendXmlnsDeclarationAttribute(element: Element, pp: XmlNsPrefixInfo) : void {
+//     const attrName = pp.prefix.length > 0 ? ('xmlns:' + pp.prefix) : 'xmlns';
+//     element.setAttribute(attrName, namespace);
+// }
 
 const walkXmlNodeImpl = (xml: Node) : XmlNodeInterpreter => {
     return new XmlNodeInterpreter(xml);
@@ -669,23 +814,29 @@ const serializeImpl = (root: any) : string => {
     
     const nsModel = nsModels[0];
 
-    const elementModel = nsModel.nsModel.findRootElement(nsModel.rootSpec.name);
+    const elementModel = nsModel.nsModel.findRootElement(nsModel.rootSpec.name, nsModel.rootSpec.namespace);
     if (!elementModel) {
-        throw new Error('Unknown root element ' + nsModel.rootSpec.name); 
+        throw new Error('Unknown root element ' + nsModel.rootSpec.namespace + ':' + nsModel.rootSpec.name); 
     }
 
+    const xmlns = XmlnsCtx.initial();
+    const pp = xmlns.getPrefixFor(elementModel);
+    const prefix = pp.prefix.length > 0 ? pp.prefix + ':' : '';
+                
     var doc: Document;
     if (typeof(document) !== 'undefined') {
-        doc = document.implementation.createDocument(nsModel.nsModel.namespace, nsModel.rootSpec.name);
+        doc = document.implementation.createDocument(nsModel.rootSpec.namespace, prefix + nsModel.rootSpec.name);
     } else {
-        doc = new DOMImplementation().createDocument(nsModel.nsModel.namespace, nsModel.rootSpec.name);
-        doc.appendChild(doc.createElementNS(nsModel.nsModel.namespace, nsModel.rootSpec.name));
+        doc = new DOMImplementation().createDocument(nsModel.rootSpec.namespace, prefix + nsModel.rootSpec.name);
+        if (!doc.documentElement) {
+            doc.appendChild(doc.createElementNS(nsModel.rootSpec.namespace, prefix + nsModel.rootSpec.name));
+        }
     }
-    
+
     const xmlDeclaration = doc.createProcessingInstruction('xml', 'version="1.0" encoding="UTF-8"');
     doc.insertBefore(xmlDeclaration, doc.firstChild);
     
-    XmlObjToDomMapper.mapElement(doc.documentElement, root, elementModel);
+    XmlObjToDomMapper.mapElement(doc.documentElement, root, elementModel, pp.nsctx);
 
     const writer = new XMLSerializer();
     const xmlText = writer.serializeToString(doc);
@@ -710,9 +861,9 @@ const deserializeImpl = <T> (xml: string, ...type: CtorOf<T>[]) : T => {
     const root = typeInfo.getTypeCtorInfo().createInstance();
 
     const nsModel = resolveModelForType(rootElement.namespaceURI ?? '', rootElement.localName, root.constructor);
-    const elementModel = nsModel.findRootElement(rootElement.localName);
+    const elementModel = nsModel.findRootElement(rootElement.localName, rootElement.namespaceURI ?? '');
     if (!elementModel) {
-        throw new Error('Unknown root element ' + rootElement.localName); 
+        throw new Error('Unknown root element ' + rootElement.namespaceURI + ':' + rootElement.localName); 
     }
     XmlDomToObjMapper.mapElement(rootElement, root, elementModel);
 

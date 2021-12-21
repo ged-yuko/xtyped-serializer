@@ -10,10 +10,14 @@ XsdSchema-aware XML serializer for TypeScript
 - [ ] All group
 - [x] Explicit sequence subgroups
 - [x] Attribute groups
-- [ ] Single namespace context
-- [ ] Multiple namespace context
-- [ ] No/Default namespace context
-- [ ] Qualifiedness
+- [x] Single namespace context
+  - [ ] tests?
+- [x] Multiple namespace context 
+  - [ ] tests?
+- [x] No/Default namespace context
+  - [ ] tests?
+- [x] Qualifiedness
+  - [ ] tests?
 - [ ] ComplexType extension
 - [ ] ComplexType restriction
 - [ ] ComplexType mixed content
@@ -32,6 +36,7 @@ XsdSchema-aware XML serializer for TypeScript
 - [ ] import
 
 **Package and functionality**
+- [ ] builtin tests based on W3C XSD Schema
 - [ ] content model caching
 - [ ] package build process review (namespacing, components and such)
 - [ ] classes generator
@@ -41,3 +46,10 @@ XsdSchema-aware XML serializer for TypeScript
   - [ ] as executable task
     - [x] xtg using ts-node
   - [ ] vscode integration (see https://github.com/microsoft/TypeScript/wiki/Using-the-Compiler-API)
+- [ ] move to fsm-based element content recognition maybe
+
+**Known issues**
+- [ ] namespace context should be preserved after attributes mapping during serialization
+- [ ] sometimes incorrect element context object during serialization (see following XsdSchema processing issues)
+    - [ ] excessive annotations
+    - [ ] see a number of definitions (complexType "anyType", element "appinfo", element "documentation")

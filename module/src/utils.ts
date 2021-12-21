@@ -1,4 +1,10 @@
-import { CtorOf } from "annotations";
+import { AnyCtorOf, CtorOf } from "annotations";
+
+export function findBaseTypeOfType<T extends R, R>(Class: AnyCtorOf<T>) : AnyCtorOf<R> {
+    const base = Object.getPrototypeOf(Class.prototype)?.constructor;
+    // return (base && (base !== {}.constructor)) ? base : null;
+    return base ? base : null;
+}
 
 export function firstOrDefault<T, R = T|undefined>(seq: Iterable<T>, def?: R) : R {
     const it = seq[Symbol.iterator]();
@@ -37,12 +43,51 @@ export function isArray(obj: any) : obj is Array<any> {
     return !!obj && obj.constructor === Array;
 }
 
-export function isArrayInstanceOf<T>(arr: any, Class: new (...args: any[])=>T) : arr is Array<T> {
+export function isArrayInstanceOf<T>(arr: any, Class: AnyCtorOf<T>) : arr is Array<T> {
     if (Array.isArray(arr)) {
         return arr.every(elem => elem instanceof Class);
     } else {
         return false;
     }
+}
+
+export function splitArrayByType<T, R, O = Exclude<T, R>>(arr: T[], Class: AnyCtorOf<R>, otherClass?: AnyCtorOf<O>) : { selected: Array<R>, rest: Array<O> } {
+    const result = {
+        selected: new Array<R>(),
+        rest: new Array<O>()
+    };
+
+    for (const item of arr) {
+        if (item instanceof Class) {
+            result.selected.push(item);
+        } else if (otherClass){
+            if (item instanceof otherClass) {
+                result.rest.push(item);
+            }
+        } else {
+            result.rest.push(<any>item);
+        }
+    }
+
+    return result;
+}
+
+export function testInstanceOf<T>(Class: AnyCtorOf<T>) : (o: any) => o is T {
+    return (o): o is T => o instanceof Class;
+}
+
+function explicitTestInstanceOf<T>(Class: AnyCtorOf<T>) : (o: any) => o is T {
+    return (o): o is T => {
+        let type = o.constructor;
+        while (type) {
+            if (type === Class) {
+                return true;
+            } else {
+                type = findBaseTypeOfType(type);
+            }
+        }
+        return false;
+    };
 }
 
 function collectTreeImpl<T>(lines: string[], prefix: string, childPrefix: string, node: T, childs: (n: T) => T[], format: (n: T) => string): void {

@@ -4,7 +4,7 @@ import g from '../mapping-generator'
 import * as ts from 'typescript'
 import * as fs from 'fs'
 import * as path from 'path'
-import { XmlNamespaceModel } from 'content-model';
+import { XmlDataModel } from 'content-model';
 import { isArrayInstanceOf, makeInstanceOf } from '../utils';
 
 const simpleXsdText = `
@@ -71,7 +71,7 @@ const simpleXmlModel = makeInstanceOf(Root, {
     part2: makeInstanceOf(Y, { b: 'p2bV' }),
 });
 
-function parseAnnotatedModelText(fname: string, text: string): XmlNamespaceModel {
+function parseAnnotatedModelText(fname: string, text: string): XmlDataModel {
     const tsAst = ts.createSourceFile(fname, text, ts.ScriptTarget.Latest);
 
     // ts.factory.createIdentifier(

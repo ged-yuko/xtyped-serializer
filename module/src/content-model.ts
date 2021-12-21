@@ -1,10 +1,81 @@
-import { findModelTypeInfoByType, XmlModelItemReference, IXmlElementParameters, XmlModelTypeInfo, DefaultCtor, IXmlChoiceParameters, XmlModelPropertyInfo } from "./annotations";
-import { collectTree, firstOrDefault, IndentedStringBuilder, isArrayInstanceOf } from "./utils";
+import { findModelTypeInfoByType, XmlModelTypeInfo, DefaultCtor, IXmlChoiceParameters, IXmlAttributeParameters, IXmlElementParameters } from "./annotations";
+import { collectTree, firstOrDefault, IndentedStringBuilder, isArrayInstanceOf, splitArrayByType } from "./utils";
+
+
+export class XmlContextInfo {
+    public constructor(
+        public readonly namespace: string,
+        public readonly attributeQualified: boolean,
+        public readonly elementQualified: boolean,
+        public readonly preferredPrefix?: string
+    ) {
+    }
+
+    public augment(
+        namespace?: string,
+        attributeQualified?: boolean,
+        elementQualified?: boolean,
+        preferredPrefix?: string
+    ): XmlContextInfo {
+        return new XmlContextInfo(
+            namespace ?? this.namespace,
+            attributeQualified ?? this.attributeQualified,
+            elementQualified ?? this.elementQualified,
+            preferredPrefix ?? this.preferredPrefix
+        );
+    }
+
+    public forAttribute(params: IXmlAttributeParameters) : XmlPartFormInfo {
+        return new XmlPartFormInfo(
+            params.namespace ?? this.namespace,
+            params.qualified ?? this.attributeQualified,
+            params.preferredPrefix ?? this.preferredPrefix
+        );
+    }
+
+    public forElement(params: IXmlElementParameters) : XmlPartFormInfo {
+        return new XmlPartFormInfo(
+            params.namespace ?? this.namespace,
+            params.qualified ?? this.elementQualified,
+            params.preferredPrefix ?? this.preferredPrefix
+        );
+    }
+    
+    public toString(): string {
+        return `{${this.namespace}}`;
+    }
+
+    public equals(other: XmlContextInfo): boolean {
+        return this.namespace === other.namespace
+            && this.attributeQualified === other.attributeQualified
+            && this.elementQualified === other.elementQualified;
+    }
+}
+export class XmlPartFormInfo {
+    public constructor(
+        public readonly namespace: string,
+        public readonly qualified: boolean,
+        public readonly preferredPrefix?: string
+    ) {
+    }
+}
+export interface IXmlContentPart {
+    form: XmlPartFormInfo;    
+}
+
+export interface IXmlAttributeContentPartVisitor<T, TRet> {
+    visitElementContentModel(elementContentModel: XmlElementContentModel, arg: T): TRet;
+    visitXmlAttributeModel(attrModel: XmlAttributeModel, arg: T): TRet;
+    visitAttributeGroupModel(groupModel: XmlAttributeGroupModel, arg: T): TRet;
+}
+export interface IXmlAttributeContentPart {
+    applyAttrContentPartVisitor<T, TRet>(visitor: IXmlAttributeContentPartVisitor<T, TRet>, arg: T): TRet;
+}
 
 export interface IXmlValueModelVisitor<T, TRet> {
-    visitNumberValue(arg0: XmlNumberValueModel, arg: T): TRet;
-    visitBooleanValue(arg0: XmlBooleanValueModel, arg: T): TRet;
-    visitStringValue(arg0: XmlStringValueModel, arg: T): TRet;
+    visitNumberValue(num: XmlNumberValueModel, arg: T): TRet;
+    visitBooleanValue(bool: XmlBooleanValueModel, arg: T): TRet;
+    visitStringValue(str: XmlStringValueModel, arg: T): TRet;
 }
 
 export abstract class XmlValueModel {
@@ -70,7 +141,7 @@ class XmlContentPartModelFormatter implements IXmlContentPartModelVisitor<any, s
 
     visitXmlElement(model: XmlElementModel, arg: any): string {
         // return `${model.namespace}:${model.name}`;
-        return `#element{:${model.elementName} @${model.propertyName}${this.amount(model)}}`;
+        return `#element{${model.form.namespace}:${model.elementName} @${model.propertyName}${this.amount(model)}}`;
     }
     visitXmlAnyElement(model: XmlElementAnyModel, arg: any): string {
         return `#any{${this.amount(model)}}`;
@@ -85,7 +156,7 @@ class XmlContentPartModelFormatter implements IXmlContentPartModelVisitor<any, s
         return `#choice{of ${model.parts.length} subparts ${model.propertyName ? `@${model.propertyName}` : ''}${this.amount(model)}}`;
     }
     visitXmlAttribute(model: XmlAttributeModel, arg: any): string {
-        return `${model.namespace}:@${model.attributeName}`;
+        return `${model.form.namespace}:@${model.attributeName}`;
     }
 }
 
@@ -106,7 +177,7 @@ class XmlContentPartModelCompleteFormatter implements IXmlContentPartModelVisito
 
     visitXmlElement(model: XmlElementModel, arg: any): string {
         // return `${model.namespace}:${model.name}`;
-        return `#element{:${model.elementName} @${model.propertyName}${this.amount(model)}}`;
+        return `#element{${model.form.namespace}:${model.elementName} @${model.propertyName}${this.amount(model)}}`;
     }
     visitXmlAnyElement(model: XmlElementAnyModel, arg: any): string {
         return `#any{${this.amount(model)}}`;
@@ -121,7 +192,7 @@ class XmlContentPartModelCompleteFormatter implements IXmlContentPartModelVisito
         return `#choice{of ${model.parts} subparts ${model.propertyName ? `@${model.propertyName}` : ''}${this.amount(model)}: ${model.parts.join(', ')}}`;
     }
     visitXmlAttribute(model: XmlAttributeModel, arg: any): string {
-        return `${model.namespace}:@${model.attributeName}`;
+        return `${model.form.namespace}:@${model.attributeName}`;
     }
 }
 
@@ -142,12 +213,12 @@ export abstract class XmlContentPartModel {
     }
 }
 
-export class XmlAttributeModel extends XmlContentPartModel {
+export class XmlAttributeModel extends XmlContentPartModel implements IXmlContentPart, IXmlAttributeContentPart {
     
     public constructor(
         public readonly propertyName: string,
         public readonly attributeName: string,
-        public readonly namespace: string,
+        public readonly form: XmlPartFormInfo,
         public readonly defaultValue: any|undefined,
         public readonly required: boolean
     ) {
@@ -155,6 +226,7 @@ export class XmlAttributeModel extends XmlContentPartModel {
     }
 
     protected applyImpl<T, TRet>(visitor: IXmlContentPartModelVisitor<T, TRet>, arg: T): TRet { return visitor.visitXmlAttribute(this, arg); }
+    public applyAttrContentPartVisitor<T, TRet>(visitor: IXmlAttributeContentPartVisitor<T, TRet>, arg: T): TRet { return visitor.visitXmlAttributeModel(this, arg); }
 }
 
 export abstract class XmlElementPartModel extends XmlContentPartModel {
@@ -188,10 +260,19 @@ export abstract class XmlElementGroupModel extends XmlElementPartModel {
         this._parts.push(part);
         return part;
     }
-    public addElement(propertyName: string, elementName: string, contentModel: XmlElementContentModel) { return this.registerPart(new XmlElementModel(elementName, propertyName, contentModel)); }
-    public addChoiceGroup(propertyName: string) { return this.registerPart(new XmlElementChoiceGroupModel(this.containerContext, propertyName)); }
-    public addSequenceGroup() { return this.registerPart(new XmlElementSequenceGroupModel(this.containerContext)); }
-    public addAllGroup() { return this.registerPart(new XmlElementAllGroupModel(this.containerContext)); }
+
+    public addElement(propertyName: string, elementName: string, formInfo: XmlPartFormInfo, contentModel: XmlElementContentModel) {
+        return this.registerPart(new XmlElementModel(propertyName, elementName, formInfo, contentModel)); 
+    }
+    public addChoiceGroup(propertyName: string) {
+        return this.registerPart(new XmlElementChoiceGroupModel(this.containerContext, propertyName)); 
+    }
+    public addSequenceGroup() { 
+        return this.registerPart(new XmlElementSequenceGroupModel(this.containerContext)); 
+    }
+    public addAllGroup() { 
+        return this.registerPart(new XmlElementAllGroupModel(this.containerContext)); 
+    }
 }
 export class XmlElementChoiceGroupModel extends XmlElementGroupModel {
     public constructor(
@@ -422,6 +503,7 @@ class XmlElementContentFsmBuilder implements IXmlContentPartModelVisitor<any, Co
 
 export abstract class XmlAttrsContainerModel {
     // private _partsByProp = new Map<string, XmlAttrsContainerModel>();
+    private _allAttrParts = new Array<IXmlAttributeContentPart>();
     private _attrs = new Array<XmlAttributeModel>();
     private _groups = new Array<XmlAttributeGroupModel>();
 
@@ -432,30 +514,37 @@ export abstract class XmlAttrsContainerModel {
     public getAttributeGroups() : ReadonlyArray<XmlAttributeGroupModel> {
         return this._groups;
     }
+    public getAllAttributeParts() : ReadonlyArray<IXmlAttributeContentPart> {
+        return this._allAttrParts;
+    }
 
-    public registerAttribute(propertyName: string, elementName: string, defaultValue: any|undefined, required: boolean) : XmlAttributeModel {
-        const attr = new XmlAttributeModel(propertyName, elementName, '', defaultValue, required); // TODO: attribute namespace
+    public registerAttribute(propertyName: string, elementName: string, formInfo: XmlPartFormInfo, defaultValue: any|undefined, required: boolean) : XmlAttributeModel {
+        const attr = new XmlAttributeModel(propertyName, elementName, formInfo, defaultValue, required); // TODO: attribute namespace
         this._attrs.push(attr);
+        this._allAttrParts.push(attr);
         return attr;
     }
 
     public registerAttrsGroup(propertyName: string, typeCtor: DefaultCtor) : XmlAttributeGroupModel {
         const group = new XmlAttributeGroupModel(propertyName, typeCtor);
         this._groups.push(group);
+        this._allAttrParts.push(group);
         return group;
     }
 }
 
-export class XmlAttributeGroupModel extends XmlAttrsContainerModel {
+export class XmlAttributeGroupModel extends XmlAttrsContainerModel implements IXmlAttributeContentPart {
     public constructor(
         public readonly propertyName: string,
         public readonly typeCtor: DefaultCtor
     ) {
         super();
     }
+
+    public applyAttrContentPartVisitor<T, TRet>(visitor: IXmlAttributeContentPartVisitor<T, TRet>, arg: T): TRet { return visitor.visitAttributeGroupModel(this, arg); }
 }
 
-export class XmlElementContentModel extends XmlAttrsContainerModel {
+export class XmlElementContentModel extends XmlAttrsContainerModel implements IXmlAttributeContentPart  {
     private _sequence: XmlElementSequenceGroupModel;
     private _isMixed = false;
     private _fsm: XmlElementContentFsm;
@@ -475,14 +564,17 @@ export class XmlElementContentModel extends XmlAttrsContainerModel {
     public getSequence() {
         return this._sequence;
     }
+
+    public applyAttrContentPartVisitor<T, TRet>(visitor: IXmlAttributeContentPartVisitor<T, TRet>, arg: T): TRet { return visitor.visitElementContentModel(this, arg); }
 }
 
-export class XmlElementModel extends XmlElementPartModel {
+export class XmlElementModel extends XmlElementPartModel implements IXmlContentPart {
     private _typeCtor: DefaultCtor;
 
     public constructor(
-        public readonly elementName: string,
         public readonly propertyName: string,
+        public readonly elementName: string,
+        public readonly form: XmlPartFormInfo,
         public readonly content: XmlElementContentModel
     ) {
         super();
@@ -495,35 +587,63 @@ export class XmlElementModel extends XmlElementPartModel {
     public setTypeCtor(ctor: DefaultCtor) { this._typeCtor = ctor; }
 }
 
-export class XmlNamespaceModel {
-    private _rootElementsByName = new Map<string, XmlElementModel>();
+export class XmlDataModel {
+    private _rootElementsByNsByName = new Map<string, Map<string, XmlElementModel>>();
     private _complexTypesByCtor = new Map<Function, XmlElementContentModel>();
 
-    public constructor(
-        public readonly namespace: string
-    ) {
+    public constructor() {
     }
 
-    public findRootElement(name: string) : XmlElementModel|undefined {
-        return this._rootElementsByName.get(name);
+    public findRootElement(name: string, namespace?: string) : XmlElementModel|undefined {
+        return this._rootElementsByNsByName.get(namespace ?? '')?.get(name);
     }
 
-    private resolveComplexTypeModel(typeInfo: XmlModelTypeInfo) : XmlElementContentModel {
-        let contentModel = this._complexTypesByCtor.get(typeInfo.getTypeCtorInfo().ctor);
-        if (!contentModel) {
-            this._complexTypesByCtor.set(typeInfo.getTypeCtorInfo().ctor, contentModel = new XmlElementContentModel());
-            this.populateAttrsModel(contentModel, typeInfo);
-            this.populatePartModel(contentModel, typeInfo);
-            // console.warn(`Model of ${typeInfo.getName()}: ${contentModel.getSequence()}`)
+    private registerRootElement(model: XmlElementModel) {
+        let elByName = this._rootElementsByNsByName.get(model.form.namespace);
+        if (!elByName) {
+            this._rootElementsByNsByName.set(model.form.namespace, elByName = new Map<string, XmlElementModel>());
+        }
+        elByName.set(model.elementName, model);
+    }
 
-            for (const rootSpec of typeInfo.getRootSpecs()) {
-                const rootElement = new XmlElementModel(rootSpec.name ?? typeInfo.getName(), '', contentModel);
-                this._rootElementsByName.set(rootElement.elementName, rootElement);
+    private registerRootElementIfNeeded(typeInfo: XmlModelTypeInfo, contentModel: XmlElementContentModel) : XmlContextInfo|undefined {
+        const rootElements = typeInfo.getRootSpecs().map(
+            rootSpec => ({ spec: rootSpec, ctx: new XmlContextInfo(rootSpec.namespace ?? '', rootSpec.attributeQualified ?? false, rootSpec.elementQualified ?? false, rootSpec.preferredPrefix) })
+        ).map(
+            s => ({ ctx: s.ctx, elmt: new XmlElementModel('', s.spec.name ?? typeInfo.getName(), s.ctx.forElement(s.spec), contentModel) })
+        );
+        if (rootElements.length > 0) {
+            const contextInfo = rootElements[0].ctx;
+            if (rootElements.every(e => e.ctx.equals(contextInfo))) {
+                rootElements.forEach(e => this.registerRootElement(e.elmt));
+            } else {
+                throw new Error(`Multinamespaced XML model types are not supported. Type '${typeInfo.getName()}' annotated as belonging to {${rootElements.map(e => `'${e.elmt.form.namespace}'`).join(', ')}} `);
             }
+            return contextInfo;
+        } else {
+            return undefined;
+        }
+    }
+
+    private resolveComplexTypeModel(typeInfo: XmlModelTypeInfo, currCtx?: XmlContextInfo) : XmlElementContentModel {
+        let result = this._complexTypesByCtor.get(typeInfo.getTypeCtorInfo().ctor);
+        if (!result) {
+            const contentModel = result = new XmlElementContentModel();
+            this._complexTypesByCtor.set(typeInfo.getTypeCtorInfo().ctor, contentModel);
+
+            const rootCtx = this.registerRootElementIfNeeded(typeInfo, contentModel);
+            if (rootCtx && currCtx && !rootCtx.equals(currCtx)) {
+                throw new Error(`Multinamespaced XML model types are not supported. Type '${typeInfo.getName()}' annotated as belonging to ${rootCtx} and used in context of ${currCtx.namespace} at the same time.`);
+            }
+
+            const ctx = currCtx ?? rootCtx ?? new XmlContextInfo('', false, false, '');
+            this.populateAttrsModel(contentModel, typeInfo, ctx);
+            this.populatePartModel(contentModel, typeInfo, ctx);
+            // console.warn(`Model of ${typeInfo.getName()}: ${contentModel.getSequence()}`)
         } else {
             // console.warn(`Reusing part model for ${typeInfo.getName()}`);
         }
-        return contentModel;
+        return result;
     }
 
     private collectTypeProps(typeInfo: XmlModelTypeInfo) {
@@ -560,19 +680,19 @@ export class XmlNamespaceModel {
         return result;
     }
 
-    private populateAttrsModel(part: XmlAttrsContainerModel, typeInfo: XmlModelTypeInfo) {
+    private populateAttrsModel(part: XmlAttrsContainerModel, typeInfo: XmlModelTypeInfo, ctx: XmlContextInfo) {
         const baseType = typeInfo.getTypeCtorInfo().getBaseType();
         if (baseType) {
             const baseTypeInfo = findModelTypeInfoByType(baseType);
             if (!baseTypeInfo) {
                 throw new Error('Unknown XML model type ' + baseType.name);
             }
-            this.populateAttrsModel(part, baseTypeInfo);
+            this.populateAttrsModel(part, baseTypeInfo, ctx);
         }
 
         for (const prop of typeInfo.getProps()) {
             for (const attr of prop.getAttributes()) {
-                part.registerAttribute(prop.name, attr.name ?? prop.name, attr.default, attr.required ?? false);
+                part.registerAttribute(prop.name, attr.name ?? prop.name, ctx.forAttribute(attr), attr.default, attr.required ?? false);
             }
 
             for (const ag of prop.getAttrGroupEntries()) {
@@ -583,13 +703,13 @@ export class XmlNamespaceModel {
                         throw new Error('Unknown XML model type ' + typeRef.name);
                     }
                     const group = part.registerAttrsGroup(prop.name, typeRef);
-                    this.populateAttrsModel(group, elTypeInfo);
+                    this.populateAttrsModel(group, elTypeInfo, ctx);
                 }
             }
         }
     }
 
-    private populatePartModel(part: XmlElementContentModel|XmlElementSequenceGroupModel, typeInfo: XmlModelTypeInfo) : void {
+    private populatePartModel(part: XmlElementContentModel|XmlElementSequenceGroupModel, typeInfo: XmlModelTypeInfo, ctx: XmlContextInfo) : void {
         // console.warn(`Preparing part model for ${typeInfo.getName()}`);
         const partSequence = part instanceof XmlElementContentModel ? part.getSequence() : part;
         const props = this.collectTypeProps(typeInfo);
@@ -599,21 +719,12 @@ export class XmlNamespaceModel {
             if (choiceSpecs.length > 1) {
                 throw new Error(`Invalid XML content model: multiple choice declarations found at property '${prop.name}' of type '${typeInfo.getName()}'`);
             }
-            const choiceSpec = choiceSpecs.length == 0 ? undefined : (<Required<IXmlChoiceParameters>>{ 
-                order: choiceSpecs[0].order ?? 1,
-                minOccurs: choiceSpecs[0].minOccurs ?? 1,
-                maxOccurs: choiceSpecs[0].maxOccurs ?? 1
-            });
+            const choiceSpec = firstOrDefault(choiceSpecs);
             const choice = choiceSpec ? partSequence.addChoiceGroup(prop.name) : undefined;
             choice?.setOccurences(choiceSpec?.minOccurs, choiceSpec?.maxOccurs);
             
             const containerModel = choice ? choice : partSequence;
 
-            // // // type XmlElementParamsWithOrder = Required<Pick<IXmlElementParameters, 'order'>> & Omit<IXmlElementParameters, 'order'>;
-            // // const elts = Array.from(prop.getElements())
-            // //                   //.filter((x): x is XmlElementParamsWithOrder => !!x.order)
-            // //                   .filter((x): x is IXmlElementParameters & { order: number} => !!x.order)
-            // //                   .sort((a, b) => a.order - b.order);
             for (const er of prop.getElements()) {
                 let ctmodel: XmlElementContentModel|undefined;
                 let typeRef: DefaultCtor|undefined;
@@ -624,13 +735,13 @@ export class XmlNamespaceModel {
                     if (!elTypeInfo) {
                         throw new Error('Unknown XML model type ' + typeRef.name);
                     }
-                    ctmodel = this.resolveComplexTypeModel(elTypeInfo);
+                    ctmodel = this.resolveComplexTypeModel(elTypeInfo, ctx.augment(er.type.namespace));
                 } else {
                     ctmodel = new XmlElementContentModel();
                 }
 
                 if (ctmodel) {
-                    const emodel = containerModel.addElement(prop.name, er.name ?? prop.name, ctmodel);
+                    const emodel = containerModel.addElement(prop.name, er.name ?? prop.name, ctx.forElement(er), ctmodel);
                     emodel.setOccurences(er.minOccurs, er.maxOccurs);
 
                     if (typeRef) {
@@ -651,7 +762,7 @@ export class XmlNamespaceModel {
                     if (!elTypeInfo) {
                         throw new Error('Unknown XML model type ' + typeRef.name);
                     }
-                    this.populatePartModel(smodel, elTypeInfo);
+                    this.populatePartModel(smodel, elTypeInfo, ctx);
                 }
             }
 
@@ -661,21 +772,18 @@ export class XmlNamespaceModel {
         }
     }
 
-    public static makeForType(type: DefaultCtor, ns?: string) : XmlNamespaceModel {
-        const model = new XmlNamespaceModel(ns ?? '');
-        const typeInfo = findModelTypeInfoByType(type);
-        // typeInfo.isMatchRootElement(new XmlModelItemReference());
-
-        if (!typeInfo) {
-            throw new Error('Unknown XML model type ' + type.name);
+    public static makeForTypes(...types: DefaultCtor[]) : XmlDataModel {
+        const typesInfo = splitArrayByType(types.map(t => findModelTypeInfoByType(t) ?? t), XmlModelTypeInfo);
+        
+        if (typesInfo.rest.length > 0) {
+            throw new Error('Unknown XML model types: ' + typesInfo.selected.map(t => t.getName()).join(', '));
         }
 
-        model.resolveComplexTypeModel(typeInfo);
+        const model = new XmlDataModel();
+        for (const typeInfo of typesInfo.selected) {
+            model.resolveComplexTypeModel(typeInfo);
+        }
 
         return model;
     }
 }
-
-
-
-
