@@ -1,4 +1,5 @@
-import { XmlModelItemReference, XmlModelTypeInfo, XmlModelPropertyInfo, findModelTypeInfoByType, findModelTypeInfoByObjType, IXmlModelItemReference, DefaultCtor, CtorOf } from "./annotations";
+import { UnionType } from "typescript";
+import { XmlModelItemReference, XmlModelTypeInfo, XmlModelPropertyInfo, findModelTypeInfoByType, findModelTypeInfoByObjType, IXmlModelItemReference, DefaultCtor, CtorOf, AnyCtorOf } from "./annotations";
 import * as m from "./content-model";
 import { ImmStack, collectTree, isArray, IndentedStringBuilder, firstOrDefault, parallelMap } from "./utils";
 
@@ -308,6 +309,11 @@ class XmlDomToObjCtx {
     }
 }
 
+type XmlConcretePartModel<T extends m.XmlContentPartModel> = (T & {property: XmlModelPropertyInfo});
+function isConcretePart<T extends m.XmlContentPartModel>(model: m.XmlContentPartModel, ctor: AnyCtorOf<T>) : model is XmlConcretePartModel<T> {
+    return model instanceof ctor && !!model.property;
+}
+
 class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx, XmlDomToObjCtx[]> {
 
     private _elements: Element[];
@@ -392,48 +398,42 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
 
     private static _objectFillers = new Map<Function, (ee: Element[], o: any, t: XmlDomToObjCtx) => void>([
         [m.XmlElementModel, (ee, o, t) => {
-            const element = (<m.XmlElementModel>t.part);
-            this.ensureCollectionIfNeeded(o, element.propertyName, element);
-            if (element.typeCtor) {
-                const value = XmlDomToObjMapper.mapElement(ee[t.start], new (element.typeCtor)(), <any>t.part);
-                this.bindValue(o, element.propertyName, value);
+            if (isConcretePart(t.part, m.XmlElementModel)) {
+                this.ensureCollectionIfNeeded(o, t.part);
+                if (t.part.typeCtor) {
+                    const value = XmlDomToObjMapper.mapElement(ee[t.start], new (t.part.typeCtor)(), <any>t.part);
+                    this.bindValue(o, t.part.property.name, value);
+                } else {
+                    console.warn(`Unable to instantiate model of ${t.part.elementName} due to unspecified contructor`);
+                }
             } else {
-                console.warn(`Unable to instantiate model of ${element.elementName} due to unspecified contructor`);
+                throw new Error('Can map only concrete element model.');
             }
         }],
         [m.XmlElementSequenceGroupModel, (ee, o, t) => {
-            const seq = (<m.XmlElementSequenceGroupModel>t.part);
-            if (seq.typeCtor || seq.propertyName) {
-                if (seq.typeCtor && seq.propertyName) {
-                    this.ensureCollectionIfNeeded(o, seq.propertyName, seq);
-                    const value = new (seq.typeCtor)();
-                    XmlDomToObjMapper.fillObj(ee, value, t);
-                    this.bindValue(o, seq.propertyName, value);
-                }
+            if (isConcretePart(t.part, m.XmlElementSequenceGroupModel) && t.part.typeCtor) {
+                this.ensureCollectionIfNeeded(o, t.part);
+                const value = new (t.part.typeCtor)();
+                XmlDomToObjMapper.fillObj(ee, value, t);
+                this.bindValue(o, t.part.property.name, value);
             } else {
                 XmlDomToObjMapper.fillObj(ee, o, t)
             }
         }],
         [m.XmlElementChoiceGroupModel, (ee, o, t) => { 
-            const choice = (<m.XmlElementChoiceGroupModel>t.part);
-            this.ensureCollectionIfNeeded(o, choice.propertyName, choice);
+            if (isConcretePart(t.part, m.XmlElementChoiceGroupModel)) {
+                this.ensureCollectionIfNeeded(o, t.part);
+            }
             XmlDomToObjMapper.fillObj(ee, o, t)
-
-            // const part = choice.parts.find(p => p instanceof m.XmlElementModel && p.elementName === ee[t.start].localName);
-            // if (part) {
-            //     XmlDomToObjMapper.fillObj(ee, o, t)
-            // } else {
-            //     throw new Error(`Unexpected part ${ee[t.start]} for ${choice.propertyName} of ${o.constructor.name}`);
-            // }
         }]
     ]);
 
-    private static ensureCollectionIfNeeded(obj: any, propertyName: string, part: m.XmlElementPartModel) {
+    private static ensureCollectionIfNeeded<T extends m.XmlElementPartModel>(obj: any, part: XmlConcretePartModel<T>) {
         if (part.maxOccurs > 1) {
-            const oldValue = Reflect.get(obj, propertyName);
+            const oldValue = Reflect.get(obj, part.property.name);
             if (!isArray(oldValue)) {
                 const newValue = new Array<any>();
-                Reflect.set(obj, propertyName, newValue);
+                Reflect.set(obj, part.property.name, newValue);
             }
         }
     }
@@ -505,11 +505,11 @@ class XmlDomToObjMapper implements m.IXmlContentPartModelVisitor<XmlDomToObjCtx,
             // const value = node.getAttributeNS(attr.form.namespace, attr.attributeName);
             const prefix = attr.form.qualified ? (node.lookupPrefix(attr.form.namespace) + ':') : '';
             const value = node.getAttribute(prefix + attr.attributeName) ?? attr.defaultValue;
-            Reflect.set(obj, attr.propertyName, value);
+            Reflect.set(obj, attr.property.name, value);
         }
         for (const agroup of model.getAttributeGroups()) {
             const value = new agroup.typeCtor();
-            Reflect.set(obj, agroup.propertyName, value); // TODO make it possible to have optional attribute groups
+            Reflect.set(obj, agroup.property.name, value); // TODO make it possible to have optional attribute groups
             this.mapElementAttributes(node, value, agroup);
         }
     }
@@ -610,25 +610,33 @@ class XmlObjToDomCtx {
     private constructor(
         public readonly parent: XmlObjToDomCtx|null,
         public readonly element: Element,
-        public readonly key: string,
         public readonly obj: any,
-        public readonly xmlns: XmlnsCtx
+        public readonly containingProperty: m.XmlModelSubpartPropertyInfo,
+        public readonly modelMatchedExplicitly: boolean,
+        public readonly xmlns: XmlnsCtx,
     ){
     }
 
-    public enter(element: Element, key: string, obj: any) : XmlObjToDomCtx {
-        return new XmlObjToDomCtx(this, element, key, obj, this.xmlns);
+    public enter(element: Element, obj: any, containingProperty: m.XmlModelSubpartPropertyInfo, modelMatchedExplicitly?: boolean) : XmlObjToDomCtx {
+        return new XmlObjToDomCtx(this, element, obj, containingProperty, modelMatchedExplicitly ?? false, this.xmlns);
     }
     public exitPreserveXmlns() : XmlObjToDomCtx {
         if (!this.parent) {
             throw new Error('Invalid operation during object to XML DOM mapping');
         }
         
-        return new XmlObjToDomCtx(this.parent.parent, this.parent.element, this.parent.key, this.parent.obj, this.xmlns.setCurrFrom(this.parent.xmlns));
+        return new XmlObjToDomCtx(
+            this.parent.parent,
+            this.parent.element,
+            this.parent.obj,
+            this.parent.containingProperty, 
+            this.modelMatchedExplicitly, 
+            this.xmlns.setCurrFrom(this.parent.xmlns)
+        );
     }
 
     private newNs(xmlns: XmlnsCtx) : XmlObjToDomCtx {
-        return new XmlObjToDomCtx(this, this.element, this.key, this.obj, xmlns);
+        return new XmlObjToDomCtx(this, this.element, this.obj, this.containingProperty, this.modelMatchedExplicitly, xmlns);
     }
 
     public getPrefixFor(part: m.IXmlContentPart) : { prefix: string, declNeeded: boolean, ctx: XmlObjToDomCtx } {
@@ -638,7 +646,7 @@ class XmlObjToDomCtx {
     }
 
     public static initial(element: Element, obj: any, xmlns: XmlnsCtx) : XmlObjToDomCtx {
-        return new XmlObjToDomCtx(null, element, '', obj, xmlns);
+        return new XmlObjToDomCtx(null, element, obj, undefined, false, xmlns);
     }
 }
 
@@ -648,7 +656,8 @@ class XmlObjToDomMapper implements m.IXmlContentPartModelVisitor<XmlObjToDomCtx,
     }
 
     visitXmlElement(model: m.XmlElementModel, arg: XmlObjToDomCtx): void {
-        const rawValue = arg.parent && arg.parent.obj !== arg.obj ? arg.obj : Reflect.get(arg.obj, model.propertyName);
+        // const containerType = arg.containingProperty?.modelTypeInfo.getTypeCtorInfo().ctor;
+        const rawValue = arg.modelMatchedExplicitly || !model.property ? arg.obj : Reflect.get(arg.obj, model.property.name); // TODO validate object type everywhere maybe
         if (rawValue) {
             const values = isArray(rawValue) ? rawValue : [rawValue];
             for (const value of values) {
@@ -656,7 +665,7 @@ class XmlObjToDomMapper implements m.IXmlContentPartModelVisitor<XmlObjToDomCtx,
                 const prefix = pp.prefix.length > 0 ? pp.prefix + ':' : '';
                 const element = arg.element.ownerDocument.createElementNS(arg.element.namespaceURI, prefix + model.elementName);
                 arg.element.appendChild(element);
-                this.fillElement(model, pp.ctx.enter(element, model.propertyName, value));
+                this.fillElement(model, pp.ctx.enter(element, value, model.property));
             }
         }
     }
@@ -668,11 +677,10 @@ class XmlObjToDomMapper implements m.IXmlContentPartModelVisitor<XmlObjToDomCtx,
     }
     visitXmlSequenceGroup(model: m.XmlElementSequenceGroupModel, arg: XmlObjToDomCtx): void {
         let ctx = arg;
-        if (model.propertyName) {
-            const groupObj = Reflect.get(arg.obj, model.propertyName);
+        if (model.property && arg.containingProperty !== model.property) {
+            const groupObj = Reflect.get(arg.obj, model.property.name);
             if (groupObj) {
-                ctx = arg.enter(arg.element, model.propertyName, groupObj)
-                         .enter(arg.element, model.propertyName, groupObj); // hack
+                ctx = arg.enter(arg.element, groupObj, model.property);
             } else {
                 return;
             }
@@ -683,7 +691,11 @@ class XmlObjToDomMapper implements m.IXmlContentPartModelVisitor<XmlObjToDomCtx,
         }
     }
     visitXmlChoiceGroup(model: m.XmlElementChoiceGroupModel, arg: XmlObjToDomCtx): void {
-        const rawValue = Reflect.get(arg.obj, model.propertyName);
+        if (!model.property) {
+            throw new Error('Invalid choice content model');
+        }
+            
+        const rawValue = Reflect.get(arg.obj, model.property.name);
         const value = isArray(rawValue) ? rawValue : [rawValue];
 
         for (const item of value) {
@@ -691,9 +703,9 @@ class XmlObjToDomMapper implements m.IXmlContentPartModelVisitor<XmlObjToDomCtx,
                 if (item.constructor) {
                     const part = model.parts.find(p => (p instanceof m.XmlElementModel || p instanceof m.XmlElementSequenceGroupModel) && p.typeCtor === item.constructor);
                     if (part) {
-                        this.visit(part, arg.enter(arg.element, model.propertyName, item));
+                        this.visit(part, arg.enter(arg.element, item, model.property, true));
                     } else {
-                        throw new Error(`Unexpected part content ${item.constructor.name} at '${model.propertyName}' of ${arg.obj.constructor.name}`);
+                        throw new Error(`Unexpected part content ${item.constructor.name} at '${model.property.name}' of ${arg.obj.constructor.name}`);
                     }
                 } else {
                     console.warn(`Unable to map ${item} due to missing constructor to classify it`);
@@ -730,19 +742,18 @@ class XmlObjToDomAttributeMapper implements m.IXmlAttributeContentPartVisitor<Xm
         const pp = arg.getPrefixFor(attrModel);
         arg = pp.ctx;
         const prefix = pp.prefix.length > 0 ? pp.prefix + ':' : '';
-        const value = Reflect.get(arg.obj, attrModel.propertyName);
+        const value = Reflect.get(arg.obj, attrModel.property.name);
         if ((value && !attrModel.defaultValue) || (attrModel.defaultValue && value !== attrModel.defaultValue)) {
             arg.element.setAttributeNS(attrModel.form.namespace, prefix + attrModel.attributeName, '' + value); // TODO sophisticated simpleTypes
         } else if (attrModel.required) {
             arg.element.setAttributeNS(attrModel.form.namespace, prefix + attrModel.attributeName, '');
         }
-        
         return arg;
     }
     visitAttributeGroupModel(groupModel: m.XmlAttributeGroupModel, arg: XmlObjToDomCtx): XmlObjToDomCtx {
-        const value  = Reflect.get(arg.obj, groupModel.propertyName);
+        const value  = Reflect.get(arg.obj, groupModel.property.name);
         if (value) {
-            arg = this.visitAttrsContainer(groupModel, arg.enter(arg.element, groupModel.propertyName, value)).exitPreserveXmlns();
+            arg = this.visitAttrsContainer(groupModel, arg.enter(arg.element, value, groupModel.property)).exitPreserveXmlns();
         }
         return arg;
     }
