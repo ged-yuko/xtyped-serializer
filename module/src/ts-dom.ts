@@ -28,6 +28,13 @@ export interface ITsSourceUnitMemberVisitor<T, TRet> {
     visitEnumDef(enumDef: TsEnumDef, arg: T): TRet;
 }
 
+export class TsAnnotationDef {
+    public constructor(
+        public readonly name: string
+    ) { 
+    }
+}
+
 export interface ITsTypeRefVisitor<T, TRet> {
     visitBuiltinTypeRef(builtinTypeRef: TsBuiltinTypeRef, arg: T): TRet;
     visitArrayTypeRef(arrayTypeRef: TsArrayTypeRef, arg: T): TRet;
@@ -226,8 +233,16 @@ export class TsMethodDef extends TsClassMember implements ITsClassMember {
 }
 
 export class TsClassDef extends TsCustomTypeDef<TsClassMember> implements ITsSourceUnitMember {
+    private _annotations = new Array<TsAnnotationDef>();
+
     public constructor(name: string) {
         super(name);
+    }
+
+    public createAnnotation(name: string): TsAnnotationDef {
+        const annotation = new TsAnnotationDef(name);
+        this._annotations.push(annotation);
+        return annotation;
     }
 
     public createMethod(name: string, signature: TsMethodSignature): TsMethodDef { 

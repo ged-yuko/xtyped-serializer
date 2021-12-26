@@ -85,13 +85,20 @@ export interface IXsdAnnotationInfo {
 //     </xs:complexType>
 //   </xs:element>
 @XmlComplexType({ name: 'annotation' })                                                         // ok
-export class XsdAnnotation extends XsdOpenAttrs {
+export class XsdAnnotation extends XsdOpenAttrs implements IXsdSchemaDeclaration {
     @XmlChoice({order: 1, minOccurs: 0, maxOccurs: 'unbounded'})
     @XmlElement({name: 'appinfo', type: {ctor: () => XsdAppInfo}})
     @XmlElement({name: 'documentation', type: {ctor: () => XsdDocumentation}})
     info = new Array<IXsdAnnotationInfo>();
     @XmlAttribute()
     id: string;
+
+    public apply<T, TRet>(visitor: IXsdAnnotationVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitXsdAnnotation(this, arg);
+    }
+}
+export interface IXsdAnnotationVisitor<T, TRet> {
+    visitXsdAnnotation(xannotation: XsdAnnotation, arg: T): TRet;
 }
 
 //   <xs:complexType name="annotated">
@@ -154,7 +161,13 @@ export interface IXsdSimpleDerivation {
 //     </xs:choice>
 //   </xs:group>
 export interface IXsdRedefinable {
-    // TODO IXsdRedefinable
+    apply<T, TRet>(visitor: IXsdRedefinableVisitor<T, TRet>, arg: T): TRet;
+}
+export interface IXsdRedefinableVisitor<T, TRet> {
+    visitXsdTopLevelSimpleType(xsimpleType: XsdTopLevelSimpleType, arg: T): TRet;
+    visitXsdTopLevelComplexType(xcomplexType: XsdTopLevelComplexType, arg: T): TRet;
+    visitXsdNamedGroup(xnamedGroup: XsdNamedGroup, arg: T): TRet;
+    visitXsdNamedAttributeGroup(xnamedAttrsGroup: XsdNamedAttributeGroup, arg: T): TRet;
 }
 
 //   <xs:group name="schemaTop">
@@ -166,7 +179,12 @@ export interface IXsdRedefinable {
 //     </xs:choice>
 //   </xs:group>
 export interface IXsdSchemaTop extends IXsdRedefinable {
-    // TODO IXsdSchemaTop
+    apply<T, TRet>(visitor: IXsdSchemaTopVisitor<T, TRet>, arg: T): TRet;
+}
+export interface IXsdSchemaTopVisitor<T, TRet> extends IXsdRedefinableVisitor<T, TRet> {
+    visitXsdTopLevelElement(xelement: XsdTopLevelElement, arg: T): TRet;
+    visitXsdTopLevelAttribute(xattribute: XsdTopLevelAttribute, arg: T): TRet;
+    visitXsdNotation(xnotation: XsdNotation, arg: T): TRet;
 }
 
 //   <xs:group name="facets">
@@ -578,11 +596,15 @@ export abstract class XsdSimpleType extends XsdAnnotated {                      
 //     </xs:complexContent>
 //   </xs:complexType>
 @XmlComplexType({name: 'topLevelSimpleType'})                                                   // deps
-export class XsdTopLevelSimpleType extends XsdSimpleType {
+export class XsdTopLevelSimpleType extends XsdSimpleType implements IXsdRedefinable {
     @XmlAttribute()
     final: string;
     @XmlAttribute({required: true})
     name: string;
+ 
+    public apply<T, TRet>(visitor: IXsdRedefinableVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitXsdTopLevelSimpleType(this, arg);
+    }
 }
 
 //   <xs:complexType name="localSimpleType">
@@ -874,10 +896,14 @@ export class XsdAttributeImpl extends XsdAttribute implements IXsdAttrsDecls {
 //     </xs:complexContent>
 //   </xs:complexType>
 @XmlComplexType({name: 'topLevelAttribute'})                                                    // ok
-export class XsdTopLevelAttribute extends XsdAttribute {
+export class XsdTopLevelAttribute extends XsdAttribute implements IXsdSchemaTop {
     
     @XmlAttribute({required: true})
     name: string;
+
+    public apply<T, TRet>(visitor: IXsdSchemaTopVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitXsdTopLevelAttribute(this, arg);
+    }
 }
 
 //   <xs:complexType name="attributeGroup" abstract="true">
@@ -912,7 +938,7 @@ export abstract class XsdAttributeGroup extends XsdAnnotated {
 //     </xs:complexContent>
 //   </xs:complexType>
 @XmlComplexType({name: 'namedAttributeGroup'})                                                 // ok
-export class XsdNamedAttributeGroup extends XsdAttributeGroup {
+export class XsdNamedAttributeGroup extends XsdAttributeGroup implements IXsdRedefinable {
     
     @XmlElement({order: 1, name: 'annotation', type: { ctor: () => XsdAnnotation }, minOccurs: 0})
     annotation: XsdAnnotation;
@@ -922,6 +948,10 @@ export class XsdNamedAttributeGroup extends XsdAttributeGroup {
 
     @XmlAttribute({required: true})
     name: string;
+
+    public apply<T, TRet>(visitor: IXsdRedefinableVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitXsdNamedAttributeGroup(this, arg);
+    }
 }
 
 //   <xs:complexType name="attributeGroupRef">
@@ -1041,7 +1071,7 @@ export interface IXsdNamedGroupParticle {
 //     </xs:complexContent>
 //   </xs:complexType>
 @XmlComplexType({name: 'namedGroup'})                                                       // ok
-export class XsdNamedGroup extends XsdRealGroup {
+export class XsdNamedGroup extends XsdRealGroup implements IXsdRedefinable {
 
     @XmlElement({order: 1, name: 'annotation', minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
@@ -1054,6 +1084,10 @@ export class XsdNamedGroup extends XsdRealGroup {
 
     @XmlAttribute({required: true})
     name: string;
+
+    public apply<T, TRet>(visitor: IXsdRedefinableVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitXsdNamedGroup(this, arg);
+    }
 }
 
 //   <xs:complexType name="groupRef">
@@ -1463,7 +1497,7 @@ export class XsdComplexType extends XsdAnnotated {
 //     </xs:complexContent>
 //   </xs:complexType>
 @XmlComplexType({name: 'topLevelComplexType'})                                              // deps
-export class XsdTopLevelComplexType extends XsdComplexType {
+export class XsdTopLevelComplexType extends XsdComplexType implements IXsdRedefinable {
         
     @XmlAttribute({required: true})
     name: string;
@@ -1473,6 +1507,10 @@ export class XsdTopLevelComplexType extends XsdComplexType {
     final: string;
     @XmlAttribute()
     block: string;
+
+    public apply<T, TRet>(visitor: IXsdRedefinableVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitXsdTopLevelComplexType(this, arg);
+    }
 }
 
 //   <xs:complexType name="localComplexType">
@@ -1675,6 +1713,10 @@ export class XsdTopLevelElement extends XsdElement implements IXsdSchemaTop {
     // block: blockSet;
     @XmlAttribute({required: true})
     name: string;
+
+    public apply<T, TRet>(visitor: IXsdSchemaTopVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitXsdTopLevelElement(this, arg);
+    }
 }
 
 //   <xs:element name="include" id="include">
@@ -1690,11 +1732,15 @@ export class XsdTopLevelElement extends XsdElement implements IXsdSchemaTop {
 //     </xs:complexType>
 //   </xs:element>
 @XmlComplexType()                                                                                       // ok
-export class XsdInclude extends XsdAnnotated {
+export class XsdInclude extends XsdAnnotated implements IXsdSchemaDeclaration {
     @XmlElement({order: 1, name: 'annotation', type: { ctor: () => XsdAnnotation }, minOccurs: 0})
     annotation: XsdAnnotation;
     @XmlAttribute()
     schemaLocation: string;
+
+    public apply<T, TRet>(visitor: IXsdSchemaDeclarationVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitXsdInclude(this, arg);
+    }
 }
 
 //   <xs:element name="import" id="import">
@@ -1711,13 +1757,17 @@ export class XsdInclude extends XsdAnnotated {
 //     </xs:complexType>
 //   </xs:element>
 @XmlComplexType()                                                                                       // ok
-export class XsdImport extends XsdAnnotated {
+export class XsdImport extends XsdAnnotated implements IXsdSchemaDeclaration {
     @XmlElement({order: 1, name: 'annotation', type: { ctor: () => XsdAnnotation }, minOccurs: 0})
     annotation: XsdAnnotation;
     @XmlAttribute()
     namespace: string;
     @XmlAttribute()
     schemaLocation: string;
+
+    public apply<T, TRet>(visitor: IXsdSchemaDeclarationVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitXsdImport(this, arg);
+    }
 }
 
 //   <xs:element name="redefine" id="redefine">
@@ -1741,8 +1791,7 @@ export interface IXsdRedefinePart extends IXsdRedefinable {
 //     </xs:complexType>
 //   </xs:element>
 @XmlComplexType()                                                                                       // ok
-export class XsdRedefine extends XsdOpenAttrs {
-    
+export class XsdRedefine extends XsdOpenAttrs implements IXsdSchemaDeclaration {
     @XmlChoice({order: 1, minOccurs: 0, maxOccurs: 'unbounded'})
     @XmlElement({name: 'annotation', type: {ctor: () => XsdAnnotation }})
     @XmlElement({name: 'complexType', type: {ctor: () => XsdTopLevelComplexType }})
@@ -1756,6 +1805,10 @@ export class XsdRedefine extends XsdOpenAttrs {
 
     @XmlAttribute()
     id: string;
+
+    public apply<T, TRet>(visitor: IXsdSchemaDeclarationVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitXsdRedefine(this, arg);
+    }
 }
 
 //   <xs:element name="notation" id="notation">
@@ -1815,14 +1868,23 @@ class XsdFormChoiceType {
 //               <xs:element ref="xs:annotation"/>
 //             </xs:choice>
 export interface IXsdSchemaDeclaration {
-    // TODO IXsdSchemaDeclaration
+    apply<T, TRet>(visitor: IXsdSchemaDeclarationVisitor<T, TRet>, arg: T):TRet;
 }
+export interface IXsdSchemaDeclarationVisitor<T, TRet> extends IXsdAnnotationVisitor<T, TRet> {
+    visitXsdAnnotation(arg0: XsdAnnotation, arg: T): TRet;
+    visitXsdRedefine(arg0: XsdRedefine, arg: T): TRet;
+    visitXsdInclude(arg0: XsdInclude, arg: T): TRet;
+    visitXsdImport(arg0: XsdImport, arg: T): TRet;
+}
+
 //             <xs:sequence minOccurs="0" maxOccurs="unbounded">
 //               <xs:group ref="xs:schemaTop"/>
 //               <xs:element ref="xs:annotation" minOccurs="0" maxOccurs="unbounded"/>
 //             </xs:sequence>
 export interface IXsdSchemaDefinition extends IXsdSchemaTop {
-    // TODO IXsdSchemaDefinition
+    apply<T, TRet>(visitor: IXsdSchemaDefinitionVisitor<T, TRet>, arg: T):TRet;
+}
+export interface IXsdSchemaDefinitionVisitor<T, TRet> extends IXsdAnnotationVisitor<T, TRet>, IXsdSchemaTopVisitor<T, TRet> {
 }
 //           </xs:sequence>
 //           <xs:attribute name="targetNamespace" type="xs:anyURI"/>
