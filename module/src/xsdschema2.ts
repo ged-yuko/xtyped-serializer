@@ -1826,7 +1826,7 @@ export class XsdRedefine extends XsdOpenAttrs implements IXsdSchemaDeclaration {
 //     </xs:complexType>
 //   </xs:element>
 @XmlComplexType()                                                                                       // ok
-export class XsdNotation extends XsdAnnotated {
+export class XsdNotation extends XsdAnnotated implements IXsdSchemaTop {
     @XmlElement({order: 1, name: 'annotation', type: { ctor: () => XsdAnnotation }, minOccurs: 0})
     annotation: XsdAnnotation;
     @XmlAttribute({required: true})
@@ -1835,6 +1835,10 @@ export class XsdNotation extends XsdAnnotated {
     public: string;
     @XmlAttribute()
     system: string;
+    
+    public apply<T, TRet>(visitor: IXsdSchemaTopVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitXsdNotation(this, arg);
+    }
 }
 
 //   <xs:simpleType name="formChoice" vs:nonbrowsable="true">

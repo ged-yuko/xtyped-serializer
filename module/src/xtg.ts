@@ -5,19 +5,18 @@ import * as path from 'path'
 
 
 export default function main(args: string[]) {
-    if (args.length !== 2) {
+    if (args.length < 2) {
         const msg = `
     Usage:
         xtg <in-schema.xsd> <out-model.ts>
         `;
         console.warn(msg);
     } else {
-        const schemaFileName = args[0];
-        const outFileName = args[1];
-
-        const schemaText = fs.readFileSync(schemaFileName, 'utf8');
-        const tsModelText = g.generate(schemaText);
-        fs.writeFileSync(outFileName, tsModelText);
+        g.generateXmlModelTypes({
+            xsdFilePath: args[0],
+            outFilePath: args[1],
+            typeNamePrefix: args.length > 2 ? args[2] : '',
+        });
     }
 }
 

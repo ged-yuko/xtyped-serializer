@@ -1,10 +1,10 @@
 import { IXsdSchemaDeclarationVisitor, IXsdSchemaDefinition, IXsdSchemaDefinitionVisitor, XsdAnnotation, XsdImport, XsdInclude, XsdNamedAttributeGroup, XsdNamedGroup, XsdNotation, XsdRedefine, XsdSchema, XsdTopLevelAttribute, XsdTopLevelComplexType, XsdTopLevelElement, XsdTopLevelSimpleType } from './xsdschema2'
 import xs from './serializer'
-import * as fs from 'fs'
 import * as ts from './ts-dom'
+import * as fs from 'fs'
 import { foreachSeparating, IndentedStringBuilder, LinkedQueue } from './utils'
 import { XmlDataModel } from './content-model'
-import { XmlComplexType } from 'annotations'
+import { XmlComplexType, XmlElementsGroup } from './annotations'
 
 
 class SourceTextBuilder implements ts.ITsSourceUnitMemberVisitor<IndentedStringBuilder, void>,
@@ -60,9 +60,12 @@ class SourceTextBuilder implements ts.ITsSourceUnitMemberVisitor<IndentedStringB
             this.formatMethodHead(m.name, m.signature, sb);
             sb.appendLine(';');
         }
-        sb.pop().appendLine('}');
+        sb.pop().appendLine('}').appendLine();
     }
     visitClassDef(classDef: ts.TsClassDef, sb: IndentedStringBuilder): void {
+        for (const a of classDef.annotations) {
+            sb.appendLine(`@${a.name}()`);
+        }
         sb.appendLine(`export class ${classDef.name} {`).push();
         for (const m of classDef.members) {
             if (m.access) {
@@ -70,7 +73,7 @@ class SourceTextBuilder implements ts.ITsSourceUnitMemberVisitor<IndentedStringB
             }
             m.apply(this, sb);
         }
-        sb.pop().appendLine('}');
+        sb.pop().appendLine('}').appendLine();
     }
     visitEnumDef(enumDef: ts.TsEnumDef, sb: IndentedStringBuilder): void {
         sb.appendLine(`export enum ${enumDef.name} {`).push();
@@ -82,7 +85,7 @@ class SourceTextBuilder implements ts.ITsSourceUnitMemberVisitor<IndentedStringB
             }
             sb.appendLine(',');
         }
-        sb.pop().appendLine('}');
+        sb.pop().appendLine('}').appendLine();
     }
 
     public static format(unit: ts.TsSourceUnit): string {
@@ -116,14 +119,35 @@ class NamespaceModel {
         public readonly typeNamePrefix?: string
     ) {
     }
+
+    public makeTypeName(name: string): string {
+        if (this.typeNamePrefix) {
+            return this.typeNamePrefix + name[0].toUpperCase() + name.substring(1);
+        } else {
+            return name;
+        }
+    }
 }
 
 class SchemaDefinitionsCollector implements IXsdSchemaDeclarationVisitor<NamespaceModel, void>, IXsdSchemaDefinitionVisitor<NamespaceModel, void> {
 
     private _nsByName = new Map<string, NamespaceModel>();
     private _queue = new LinkedQueue<NamespaceModel>();
+    private _log: IndentedStringBuilder;
 
-    constructor() {
+    public constructor(log: IndentedStringBuilder) {
+        this._log = log;
+    }
+
+    private log(msg: string, ctl?: number) : void {
+        this._log.appendLine(msg);
+
+        if (ctl) {
+            const f = ctl > 0 ? () => this._log.push() : () => this._log.pop();
+            for (let i = Math.abs(ctl); i > 0; i--) {
+                f();
+            }
+        }
     }
 
     public importXsdFromFile(outputFilePath: string, xsdFilePath: string, typeNamePrefix?: string) : NamespaceModel {
@@ -133,13 +157,13 @@ class SchemaDefinitionsCollector implements IXsdSchemaDeclarationVisitor<Namespa
 
     public importXsdText(outputFilePath: string, xsdSchemaText: string, xsdFilePath?: string, typeNamePrefix?: string) : NamespaceModel {
         const schema = xs.deserialize(xsdSchemaText, XsdSchema);
-        const info = new NamespaceModel(schema, outputFilePath, xsdFilePath, typeNamePrefix);
+        const info = new NamespaceModel(schema, outputFilePath, xsdFilePath, typeNamePrefix?.trim());
         this._nsByName.set(schema.targetNamespace, info);
         this._queue.enqueue(info);
         return info;
     }
     
-    private getSchema(ns: string, location?: string) : NamespaceModel {
+    private getSchema(ns: string, location?: string) : NamespaceModel|undefined {
         const info = this._nsByName.get(ns);
         if (info) {
             return info;
@@ -147,10 +171,12 @@ class SchemaDefinitionsCollector implements IXsdSchemaDeclarationVisitor<Namespa
             if (fs.existsSync(location)) {
                 return this.importXsdFromFile('', location);
             } else {
-                throw new Error(`Failed to obtain schema '${ns}' from '${location}'`);
+                this.log(`Failed to obtain schema '${ns}' from '${location}'`);
+                return undefined;
             }
         } else {
-            throw new Error(`Failed to obtain schema '${ns}'`);
+            this.log(`Failed to obtain schema '${ns}'`);
+            return undefined;
         }
     }
 
@@ -159,6 +185,7 @@ class SchemaDefinitionsCollector implements IXsdSchemaDeclarationVisitor<Namespa
         const result = new Array<NamespaceModel>();
         while (schemaInfo) {
             this.collectDefinitions(schemaInfo.schema, schemaInfo);
+            result.push(schemaInfo);
             schemaInfo = this._queue.dequeue();
         }
         return result;
@@ -173,7 +200,7 @@ class SchemaDefinitionsCollector implements IXsdSchemaDeclarationVisitor<Namespa
         // do nothing
     }
     visitXsdRedefine(xredefine: XsdRedefine, context: NamespaceModel): void {
-        throw new Error(`Redefine not supported`);
+        this.log(`Redefine not supported`);
     }
     visitXsdInclude(xinclude: XsdInclude, context: NamespaceModel): void {
         if (fs.existsSync(xinclude.schemaLocation)) {
@@ -181,12 +208,14 @@ class SchemaDefinitionsCollector implements IXsdSchemaDeclarationVisitor<Namespa
             const part = xs.deserialize(partText, XsdSchema);
             this.collectDefinitions(part, context);
         } else {
-            throw new Error(`Failed to obtain included schema part ${xinclude.schemaLocation}`);
+            this.log(`Failed to obtain included schema part ${xinclude.schemaLocation}`);
         }
     }
     visitXsdImport(ximport: XsdImport, context: NamespaceModel): void {
         const model = this.getSchema(ximport.namespace, ximport.schemaLocation);
-        context.references.set(ximport.namespace, model);
+        if (model) {
+            context.references.set(ximport.namespace, model);
+        }
     }
     
     visitXsdTopLevelElement(xelement: XsdTopLevelElement, context: NamespaceModel): void {
@@ -211,56 +240,78 @@ class SchemaDefinitionsCollector implements IXsdSchemaDeclarationVisitor<Namespa
         context.attributeGroups.set(xnamedAttrsGroup.name, xnamedAttrsGroup);
     }
 }
-
+require
 class SourceModelBuilder {
+    private _log: IndentedStringBuilder;
+    private _collector: SchemaDefinitionsCollector;
 
-    public constructor() {
+    public constructor(log: IndentedStringBuilder) {
+        this._log = log;
+        this._collector = new SchemaDefinitionsCollector(log);
     }
 
+    public import(xsdFilePath: string, outFilePart: string, typeNamePrefix: string) : void{
+        this._collector.importXsdFromFile(outFilePart, xsdFilePath, typeNamePrefix);
+    }        
+
     public doWork() {
-        const collector = new SchemaDefinitionsCollector();
-        const nss = collector.doWork();
+        // try {
+            const nss = this._collector.doWork();
 
-        
+            const annotations = require('./annotations');
+            const importStmt = `import { ${Object.keys(annotations).join(', ')} } from './annotations';\n\n`;
 
+            for (const ns of nss) {
+                // try {
+                    const unit = this.translateNsModel(ns);
+
+                    const text = SourceTextBuilder.format(unit);
+                    
+                    fs.writeFileSync(ns.outputFileName, importStmt + text, 'utf-8');
+                // } catch (e) {
+                //     console.error(`Error generating XML document model for namespace '${ns.schema.targetNamespace}' ('${ns.inputFileName}' --> '${ns.outputFileName}')\n${e}`);
+                // }
+            }
+        // } catch (e) {
+        //     console.error(`Error preparing XML document model generation\n${e}`);
+        // }
     }
 
     private translateNsModel(ns: NamespaceModel) : ts.TsSourceUnit {
-        const unit = new ts.TsSourceUnit(ns.outputFileName);
+        const unit = new ts.TsSourceUnit(ns.outputFileName); 
+        // TODO introduce imports as members
         
         ns.groups.forEach(g => {
-            const cd = unit.createClass(ns.typeNamePrefix + g.name);
-            
+            const cd = unit.createClass(ns.makeTypeName(g.name));
+            cd.createAnnotation(XmlElementsGroup.name);
         });
         ns.complexTypes.forEach(t => {
-            const cd = unit.createClass(ns.typeNamePrefix + t.name);
+            const cd = unit.createClass(ns.makeTypeName(t.name));
             cd.createAnnotation(XmlComplexType.name);
         });
 
         return unit;
     }
 
-
     public static collect(ns: XmlDataModel): ts.TsSourceUnit {
         throw new Error('SourceModelBuilder not implemented');
     }
 }
 
+export interface XmlModelGeneratorSpec {
+    xsdFilePath: string;
+    outFilePath: string;
+    typeNamePrefix: string;
+}
 
 export default {
-    // schemaText: xsdschemaText,
-    generate: (schemaText: string) : string => {
-       
-        /*
-        const schema = xs.deserialize(schemaText, XsdSchema);
-        const models = ContentModelBuilder.collect(schema);
-        const sources = models.map(m => SourceModelBuilder.collect(m));
-        const sourceText = sources.map(s => SourceTextBuilder.format(s)).join('');
-        */
-        const xsd = xs.deserialize(schemaText, XsdSchema);
-        // console.warn(JSON.stringify(xsd, null, '  '));
-        // fs.writeFileSync(".\\out.json", JSON.stringify(xsd, null, '  '));
-        const sourceText = xs.serialize(xsd);
-        return sourceText;
+    generateXmlModelTypes: (spec: XmlModelGeneratorSpec) : void => {
+
+        const log = new IndentedStringBuilder();
+        const smb = new SourceModelBuilder(log);
+        smb.import(spec.xsdFilePath, spec.outFilePath, spec.typeNamePrefix);
+        smb.doWork();
+
+        console.log(log.stringify());
     }
 };

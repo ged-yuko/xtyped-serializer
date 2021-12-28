@@ -37,6 +37,7 @@ XsdSchema-aware XML serializer for TypeScript
 - [ ] import
 
 **Package and functionality**
+- [ ] logging throughout the code 
 - [ ] builtin tests based on W3C XSD Schema
 - [ ] content model caching
 - [ ] package build process review (namespacing, components and such)

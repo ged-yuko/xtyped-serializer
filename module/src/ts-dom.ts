@@ -239,6 +239,10 @@ export class TsClassDef extends TsCustomTypeDef<TsClassMember> implements ITsSou
         super(name);
     }
 
+    public get annotations() : ReadonlyArray<TsAnnotationDef> { 
+        return this._annotations;
+    }
+
     public createAnnotation(name: string): TsAnnotationDef {
         const annotation = new TsAnnotationDef(name);
         this._annotations.push(annotation);
