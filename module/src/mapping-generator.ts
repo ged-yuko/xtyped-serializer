@@ -1,4 +1,4 @@
-import { IXsdAttrsDeclsVisitor, IXsdComplexContentVisitor, IXsdComplexTypeModelVisitor, IXsdNamedGroupParticleVisitor, IXsdSchemaDeclarationVisitor, IXsdSchemaDefinition, IXsdSchemaDefinitionVisitor, IXsdTypeDefParticleVisitor, XsdAnnotation, XsdAttrDecls, XsdAttributeGroupRef, XsdAttributeImpl, XsdAttributeUse, XsdComplexContent, XsdComplexRestrictionType, XsdExtensionTypeImpl, XsdFormChoice, XsdImplicitComplexTypeModel, XsdImport, XsdInclude, XsdNamedAllParticleGroup, XsdNamedAttributeGroup, XsdNamedGroup, XsdNotation, XsdRedefine, XsdSchema, XsdSimpleContent, XsdSimpleExplicitChoiceGroup, XsdSimpleExplicitSequenceGroup, XsdTopLevelAttribute, XsdTopLevelComplexType, XsdTopLevelElement, XsdTopLevelSimpleType } from './xsdschema2'
+import { IXsdAttrsDeclsVisitor, IXsdComplexContentVisitor, IXsdComplexTypeModelVisitor, IXsdNamedGroupParticle, IXsdNamedGroupParticleVisitor, IXsdSchemaDeclarationVisitor, IXsdSchemaDefinition, IXsdSchemaDefinitionVisitor, IXsdTypeDefParticleVisitor, XsdAnnotation, XsdAttrDecls, XsdAttributeGroupRef, XsdAttributeImpl, XsdAttributeUse, XsdComplexContent, XsdComplexRestrictionType, XsdExtensionTypeImpl, XsdFormChoice, XsdImplicitComplexTypeModel, XsdImport, XsdInclude, XsdNamedAllParticleGroup, XsdNamedAttributeGroup, XsdNamedGroup, XsdNotation, XsdRedefine, XsdSchema, XsdSimpleContent, XsdSimpleExplicitChoiceGroup, XsdSimpleExplicitSequenceGroup, XsdTopLevelAttribute, XsdTopLevelComplexType, XsdTopLevelElement, XsdTopLevelSimpleType } from './xsdschema2'
 import xs from './serializer'
 import { ITsClassMemberVisitor, ITsExprVisitor, ITsSourceUnitMemberVisitor, ITsTypeRefVisitor, TsAnnotationsCollection, TsArrayLiteralExpr, TsArrayTypeRef, TsBooleanExpr, TsBuiltinTypeKind, TsBuiltinTypeRef, TsClassDef, TsCtorRefExpr, TsCustomTypeRef, TsEnumDef, TsExpr, TsFieldDef, TsLambdaExpr as TsLambdaExpr, TsInterfaceDef, TsMethodDef, TsMethodSignature, TsNullExpr, TsNumberExpr, TsObjLiteralExpr, TsSourceUnit, TsStringExpr, TsTypeRef, TsUndefinedExpr } from './ts-dom'
 import * as fs from 'fs'
@@ -102,7 +102,6 @@ class SourceTextBuilder implements ITsSourceUnitMemberVisitor<IndentedStringBuil
             sb.append(')');
             sb.appendLine();
         }
-        console.warn(JSON.stringify(collection, null, '  '));
     }
 
 
@@ -315,8 +314,10 @@ class SchemaDefinitionsCollector implements IXsdSchemaDeclarationVisitor<Namespa
     }
 }
 
-class ComplexTypeModelCollector implements IXsdComplexTypeModelVisitor<number, number>,
-                                           IXsdTypeDefParticleVisitor<number, number> {
+class ClassModelCollector implements IXsdComplexTypeModelVisitor<number, number>,
+                                     IXsdTypeDefParticleVisitor<number, number>,
+                                     IXsdNamedGroupParticleVisitor<undefined, void>,
+                                     IXsdAttrsDeclsVisitor<undefined, void> {
     private readonly _ns: NamespaceModel;
     private readonly _classDef: TsClassDef;
 
@@ -345,14 +346,60 @@ class ComplexTypeModelCollector implements IXsdComplexTypeModelVisitor<number, n
         return index;
     }
     visitImplicitComplexTypeModel(icmodel: XsdImplicitComplexTypeModel, index: number): number {
-        SourceModelBuilder.implementAttributes(icmodel.attrDecls, this._classDef);
+        this.collectAttributes(icmodel.attrDecls);
         // SourceModelBuilder.implementComplexContentPart(seq, this._classDef, 0);
         
-        return icmodel.particles.apply(this, index);
+        //return icmodel.particles.apply(this, index);
+        return index;
     }
 
-    public collect(t: XsdTopLevelComplexType) {
+    public collectComplexType(t: XsdTopLevelComplexType) {
         t.model.apply(this, 0);
+    }
+
+    public collectAttributes(attrs: XsdAttrDecls): void {
+        attrs.decls.forEach(a => a.apply(this, undefined));
+    }
+
+    visitXsdAttribute(attr: XsdAttributeImpl, arg: undefined): void {
+        if (attr.defRef.ref) {
+            throw new Error('attr ref not implemented');
+        } else if (attr.defRef.name) {
+            const isOptional = attr.use === XsdAttributeUse.Optional || !attr.use;
+            const fd = this._classDef.createField(attr.defRef.name, TsTypeRef.makeBuiltin(TsBuiltinTypeKind.String), isOptional);
+
+            const aargs = TsExpr.object();
+            if (attr.default) {
+                aargs.items.set('default', TsExpr.string(attr.default));
+            }
+            if (attr.form === XsdFormChoice.Qualified) {
+                aargs.items.set('qualified', TsExpr.bool(true));
+            }
+            if (!isOptional) {
+                aargs.items.set('required', TsExpr.bool(true));
+            }
+            fd.annotations.addByName(XmlAttribute.name, aargs);
+        }
+    }
+
+    visitXsdAttributeGroupRef(groupRef: XsdAttributeGroupRef, arg: undefined): void {
+        const fd = this._classDef.createField(groupRef.ref, TsTypeRef.makeCustom(groupRef.ref));
+        fd.annotations.addByName(XmlAttributesGroupEntry.name, TsExpr.object([
+            ['ctor', TsExpr.lambda(TsMethodSignature.nothingToUnpsecified(), TsExpr.ctorRef(groupRef.ref))]
+        ]));
+    }
+
+    public collectNamedGroup(particle: IXsdNamedGroupParticle): void {
+        particle.apply(this, undefined);
+    }
+    visitAllGroupParticle(all: XsdNamedAllParticleGroup, arg: undefined): void {
+        console.error('top level all group not implemented');
+    }
+    visitChoiceGroupParticle(choice: XsdSimpleExplicitChoiceGroup, arg: undefined): void {
+        console.error('top level choice group not implemeneted');
+    }
+    visitSequenceGroupParticle(seq: XsdSimpleExplicitSequenceGroup, arg: undefined): void {
+        console.error('top level sequence group not implemeneted');
     }
 }
 
@@ -383,6 +430,8 @@ class SourceModelBuilder {
                     const text = SourceTextBuilder.format(unit);
                     
                     fs.writeFileSync(ns.outputFileName, importStmt + text, 'utf-8');
+
+                    console.log(`${ns.outputFileName} written.`);
                 // } catch (e) {
                 //     console.error(`Error generating XML document model for namespace '${ns.schema.targetNamespace}' ('${ns.inputFileName}' --> '${ns.outputFileName}')\n${e}`);
                 // }
@@ -398,82 +447,32 @@ class SourceModelBuilder {
         ns.attributeGroups.forEach(g => {
             const cd = unit.createClass(ns.makeTypeName(g.name));
             cd.annotations.addByType(XmlAttributesGroup);
-            SourceModelBuilder.implementAttributes(g.attrDecls, cd);
+
+            const collector = new ClassModelCollector(ns, cd);
+            collector.collectAttributes(g.attrDecls);
         });
         
         ns.groups.forEach(g => {
             const cd = unit.createClass(ns.makeTypeName(g.name));
             cd.annotations.addByType(XmlElementsGroup);
 
-            g.particle.apply(new class implements IXsdNamedGroupParticleVisitor<undefined, void> {
-                visitAllGroupParticle(all: XsdNamedAllParticleGroup, arg: undefined): void {
-                    console.error('top level all group not implemented');
-                }
-                visitChoiceGroupParticle(choice: XsdSimpleExplicitChoiceGroup, arg: undefined): void {
-                    console.error('top level choice group not implemeneted');
-                }
-                visitSequenceGroupParticle(seq: XsdSimpleExplicitSequenceGroup, arg: undefined): void {
-                    const cd = unit.createClass(ns.makeTypeName(g.name));
-                    cd.annotations.addByType(XmlElementsGroup);
-                    SourceModelBuilder.implementComplexContentPart(seq, cd, 0);
-                }
-            }, undefined);
+            const ctcollector = new ClassModelCollector(ns, cd);
+            ctcollector.collectNamedGroup(g.particle);
         });
         ns.complexTypes.forEach(t => {
             const cd = unit.createClass(ns.makeTypeName(t.name));
             cd.annotations.addByType(XmlComplexType);
 
             if (t.abstract || t.mixed || t.final || t.block) {
-                console.error('attributed types not implemeneted');
+                console.error('type attributes not implemeneted');
             }
             
-            const ctcollector = new ComplexTypeModelCollector(ns, cd);
-            ctcollector.collect(t);            
+            const ctcollector = new ClassModelCollector(ns, cd);
+            ctcollector.collectComplexType(t);
         });
 
         return unit;
     }
-
-    public static implementAttributes(attrs: XsdAttrDecls, cd: TsClassDef): void {
-        attrs.decls.forEach(a => {
-            a.apply(new class implements IXsdAttrsDeclsVisitor<undefined, void> {
-                visitXsdAttribute(attr: XsdAttributeImpl, arg: undefined): void {
-                    if (attr.defRef.ref) {
-                        throw new Error('attr ref not implemented');
-                    } else if (attr.defRef.name) {
-                        const isOptional = attr.use === XsdAttributeUse.Optional || !attr.use;
-                        const fd = cd.createField(attr.defRef.name, TsTypeRef.makeBuiltin(TsBuiltinTypeKind.String), isOptional);
-
-                        const aargs = TsExpr.object();
-                        if (attr.default) {
-                            aargs.items.set('default', TsExpr.string(attr.default));
-                        }
-                        if (attr.form === XsdFormChoice.Qualified) {
-                            aargs.items.set('qualified', TsExpr.bool(true));
-                        }
-                        if (!isOptional) {
-                            aargs.items.set('required', TsExpr.bool(true));
-                        }
-                        fd.annotations.addByName(XmlAttribute.name, aargs);
-                    }
-                }
-                visitXsdAttributeGroupRef(groupRef: XsdAttributeGroupRef, arg: undefined): void {
-                    const fd = cd.createField(groupRef.ref, TsTypeRef.makeCustom(groupRef.ref));
-                    fd.annotations.addByName(XmlAttributesGroupEntry.name, TsExpr.object([
-                        ['ctor', TsExpr.lambda(TsMethodSignature.nothingToUnpsecified(), TsExpr.ctorRef(groupRef.ref))]
-                    ]));
-                }
-            }, undefined);
-        });
-    }
-
-    public static implementComplexContentPart(seq: XsdSimpleExplicitSequenceGroup, cd: TsClassDef, memberIndex: number): number {
-
-        console.error('implementComplexContentPart(..) not implemented');
-
-        return memberIndex;
-    }
-
 
     public static collect(ns: XmlDataModel): TsSourceUnit {
         throw new Error('SourceModelBuilder not implemented');
