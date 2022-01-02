@@ -1,3 +1,198 @@
+import { AnyCtorOf } from './annotations';
+import { isArray } from './utils';
+
+export class TsSourceItem {
+    private _type = this.constructor.name;
+}
+
+export interface ITsExprVisitor<T, TRet> {
+    visitCtorRetExpr(ctor: TsCtorRefExpr, arg: T): TRet;
+    visitLambdaExpr(func: TsLambdaExpr, arg: T): TRet;
+    visitArrayExpr(arr: TsArrayLiteralExpr, arg: T): TRet;
+    visitObjectExpr(obj: TsObjLiteralExpr, arg: T): TRet;
+    visitStringExpr(str: TsStringExpr, arg: T): TRet;
+    visitBooleanExpr(bool: TsBooleanExpr, arg: T): TRet;
+    visitNumberExpr(num: TsNumberExpr, arg: T): TRet;
+    visitNullExpr(obj: TsNullExpr, arg: T): TRet;
+    visitUndefinedExpr(obj: TsUndefinedExpr, arg: T): TRet;
+}
+
+export abstract class TsExpr extends TsSourceItem {
+    public constructor() {
+        super();
+    }
+
+    public apply<T, TRet>(visitor: ITsExprVisitor<T, TRet>, arg: T): TRet {
+        return this.applyImpl(visitor, arg);
+    }
+
+    protected abstract applyImpl<T, TRet>(visitor: ITsExprVisitor<T, TRet>, arg: T): TRet;
+
+    public static literalFromExample(obj: any): TsLiteralExpr {
+        if (isArray(obj)) {
+            return new TsArrayLiteralExpr(obj.map(o => this.literalFromExample(o)));
+        } else {
+            switch (typeof obj) {
+                case 'number': return new TsNumberExpr(obj);
+                case 'boolean': return this.bool(obj);
+                case 'string': return new TsStringExpr(obj);
+                case 'undefined': return TsUndefinedExpr.Instance;
+                case 'object': return new TsObjLiteralExpr(new Map<string, TsExpr>(Object.entries(obj).map(([k, v]) => [k, this.literalFromExample(v)])));
+                case 'symbol':
+                case 'function':
+                case 'bigint':
+                default:
+                    throw new Error(`Unsupported literal example type ${typeof obj}`);
+            }
+        }
+    }
+
+    public static array(...items: TsExpr[]) {
+        return new TsArrayLiteralExpr(items);
+    }
+
+    public static object(members?: readonly (readonly [string, TsExpr])[]) {
+        return new TsObjLiteralExpr(new Map(members));
+    }
+
+    public static lambda(signature: TsMethodSignature, body: TsExpr) {
+        return new TsLambdaExpr(signature, body);
+    }
+
+    public static ctorRef(typeName: string) {
+        return new TsCtorRefExpr(typeName);
+    }
+
+    public static string(value: string) {
+        return new TsStringExpr(value);
+    }
+
+    public static number(value: number) {
+        return new TsNumberExpr(value);
+    }
+
+    public static bool(value: boolean) {
+        return value ? TsBooleanExpr.TrueInstance : TsBooleanExpr.FalseInstance;
+    }
+
+    public static null() {
+        return TsNullExpr.Instance;
+    }
+
+    public static undefined() {
+        return TsUndefinedExpr.Instance;
+    }
+}
+
+export abstract class TsLiteralExpr extends TsExpr {
+}
+export class TsUndefinedExpr extends TsLiteralExpr {
+    public static Instance = new TsUndefinedExpr();
+    
+    private constructor() {
+        super();
+    }
+
+    protected override applyImpl<T, TRet>(visitor: ITsExprVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitUndefinedExpr(this, arg);
+    }
+}
+export class TsNullExpr extends TsLiteralExpr {
+    public static Instance = new TsNullExpr();
+
+    private constructor() {
+        super();
+    }
+
+    protected override applyImpl<T, TRet>(visitor: ITsExprVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitNullExpr(this, arg);
+    }
+}
+export class TsNumberExpr extends TsLiteralExpr {
+    public constructor(
+        public readonly value: number
+    ) {
+        super();
+    }
+
+    protected override applyImpl<T, TRet>(visitor: ITsExprVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitNumberExpr(this, arg);
+    }
+}
+export class TsBooleanExpr extends TsLiteralExpr {
+    public static TrueInstance = new TsBooleanExpr(true);
+    public static FalseInstance = new TsBooleanExpr(false);
+    
+    private constructor(
+        public readonly value: boolean
+    ) {
+        super();
+    }
+
+    protected override applyImpl<T, TRet>(visitor: ITsExprVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitBooleanExpr(this, arg);
+    }
+}
+export class TsStringExpr extends TsLiteralExpr {
+    public constructor(
+        public readonly value: string
+    ) {
+        super(); 
+    }
+
+    protected override applyImpl<T, TRet>(visitor: ITsExprVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitStringExpr(this, arg);
+    }
+}
+
+export class TsObjLiteralExpr extends TsExpr {
+    public constructor(
+        public readonly items: Map<string, TsExpr>
+    ) {
+        super();
+    }
+
+    protected override applyImpl<T, TRet>(visitor: ITsExprVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitObjectExpr(this, arg);
+    }
+}
+
+export class TsArrayLiteralExpr extends TsExpr {
+    public constructor(
+        public readonly items: TsExpr[]
+    ) {
+        super();
+    }
+
+    protected override applyImpl<T, TRet>(visitor: ITsExprVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitArrayExpr(this, arg);
+    }
+}
+
+export class TsLambdaExpr extends TsExpr {
+    public constructor(
+        public readonly signature: TsMethodSignature,
+        public readonly body: TsExpr
+    ) {
+        super();
+    }
+
+    protected override applyImpl<T, TRet>(visitor: ITsExprVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitLambdaExpr(this, arg);
+    }
+}
+
+export class TsCtorRefExpr extends TsLiteralExpr {
+    public constructor(
+        public readonly typeName: string
+    ) {
+        super();
+    }
+
+    protected override applyImpl<T, TRet>(visitor: ITsExprVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitCtorRetExpr(this, arg);
+    }
+}
 
 export interface ITsNamedMember {
     get name(): string;
@@ -28,10 +223,32 @@ export interface ITsSourceUnitMemberVisitor<T, TRet> {
     visitEnumDef(enumDef: TsEnumDef, arg: T): TRet;
 }
 
-export class TsAnnotationDef {
+export class TsAnnotationDef extends TsSourceItem {
     public constructor(
-        public readonly name: string
+        public readonly name: string,
+        public readonly args: TsExpr[]
     ) { 
+        super();
+    }
+}
+
+export class TsAnnotationsCollection {
+    private _defs = new Array<TsAnnotationDef>();
+
+    public get defs() : ReadonlyArray<TsAnnotationDef> { 
+        return this._defs;
+    }
+
+    public addByName(name: string, ...args: TsExpr[]): TsAnnotationDef {
+        const annotation = new TsAnnotationDef(name, args);
+        this._defs.push(annotation);
+        return annotation;
+    }
+
+    public addByType<F extends (...args: any[])=> any>(ctor: F, args?: Parameters<F>): TsAnnotationDef {
+        const annotation = new TsAnnotationDef(ctor.name, args?.map(a => TsExpr.literalFromExample(a)) ?? []);
+        this._defs.push(annotation);
+        return annotation;
     }
 }
 
@@ -48,7 +265,11 @@ export enum TsBuiltinTypeKind {
     Undefined = 'undefined',
     Void = 'void'
 }
-export abstract class TsTypeRef {
+export abstract class TsTypeRef extends TsSourceItem  {
+    public constructor() {
+        super();
+    }
+
     public static makeBuiltin(kind: TsBuiltinTypeKind): TsTypeRef { return new TsBuiltinTypeRef(kind); }
     public static makeArray(number, elementType: TsTypeRef): TsTypeRef { return new TsArrayTypeRef(elementType); }
     public static makeCustom(name: string, genericArgs?: TsTypeRef[]): TsTypeRef { return new TsCustomTypeRef(name, genericArgs); }
@@ -85,10 +306,11 @@ export class TsCustomTypeRef extends TsTypeRef {
     protected override applyImpl<T, TRet>(visitor: ITsTypeRefVisitor<T, TRet>, arg: T): TRet { return visitor.visitCustomTypeRef(this, arg); }
 }
 
-export abstract class TsNamedMember implements ITsNamedMember {
+export abstract class TsNamedMember extends TsSourceItem implements ITsNamedMember {
     public constructor(
         public readonly name: string
     ) {
+        super();
     }
 }
 
@@ -105,9 +327,13 @@ export class TsGenericParameterDef extends TsNamedMember {
 
 export class TsMethodSignature {
     public constructor(
-        public readonly paramTypes: TsTypeRef[],
-        public readonly returnType: TsTypeRef
+        public readonly paramTypes?: TsTypeRef[],
+        public readonly returnType?: TsTypeRef
     ) {
+    }
+
+    public static nothingToUnpsecified() {
+        return new TsMethodSignature();
     }
 }
 
@@ -154,12 +380,14 @@ export abstract class TsCustomTypeDef<M extends ITsNamedMember> extends TsNamedO
 }
 
 export abstract class TsClassMember extends TsNamedMember implements ITsClassMember {
+    public readonly annotations = new TsAnnotationsCollection();
+
     public access?: TsAccessModifier;
 
     public constructor(name: string) {
         super(name);
     }
-
+    
     public abstract apply<T, TRet>(visitor: ITsClassMemberVisitor<T, TRet>, arg: T): TRet;
 }
 
@@ -209,7 +437,8 @@ export class TsInterfaceDef extends TsCustomTypeDef<TsMethodDecl> implements ITs
 export class TsFieldDef extends TsClassMember implements ITsClassMember {
     public constructor(
         name: string,
-        public readonly fieldType?: TsTypeRef
+        public readonly fieldType?: TsTypeRef,
+        public readonly isOptional?: boolean
     ) {
         super(name);
     }
@@ -219,7 +448,7 @@ export class TsFieldDef extends TsClassMember implements ITsClassMember {
     }
 }
 
-export class TsMethodDef extends TsClassMember implements ITsClassMember {
+export class TsMethodDef extends TsClassMember implements ITsClassMember { // split into method def and method decl
     public constructor(
         name: string,
         public readonly signature: TsMethodSignature
@@ -233,28 +462,18 @@ export class TsMethodDef extends TsClassMember implements ITsClassMember {
 }
 
 export class TsClassDef extends TsCustomTypeDef<TsClassMember> implements ITsSourceUnitMember {
-    private _annotations = new Array<TsAnnotationDef>();
+    public readonly annotations = new TsAnnotationsCollection();
 
     public constructor(name: string) {
         super(name);
-    }
-
-    public get annotations() : ReadonlyArray<TsAnnotationDef> { 
-        return this._annotations;
-    }
-
-    public createAnnotation(name: string): TsAnnotationDef {
-        const annotation = new TsAnnotationDef(name);
-        this._annotations.push(annotation);
-        return annotation;
     }
 
     public createMethod(name: string, signature: TsMethodSignature): TsMethodDef { 
         return this.register(new TsMethodDef(name, signature));
     }
 
-    public createField(name: string, fieldType?: TsTypeRef): TsFieldDef { 
-        return this.register(new TsFieldDef(name, fieldType));
+    public createField(name: string, fieldType?: TsTypeRef, isOptional?: boolean): TsFieldDef { 
+        return this.register(new TsFieldDef(name, fieldType, isOptional));
     }
 
     apply<T, TRet>(visitor: ITsSourceUnitMemberVisitor<T, TRet>, arg: T): TRet {

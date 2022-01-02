@@ -137,9 +137,9 @@ export class XsdOccursAttrGroup {
 @XmlAttributesGroup({ name: 'defRef' })                                                         // ok
 export class XsdDefRefAttrGroup {
     @XmlAttribute()
-    name: string;
+    name?: string;
     @XmlAttribute()
-    ref: string;
+    ref?: string;
 }
 
 //   <xs:group name="simpleDerivation">
@@ -791,7 +791,9 @@ export class XsdAny extends XsdWildcard {
 //     </xs:choice>
 //   </xs:group>
 export interface IXsdTypeDefParticle {
-    // TODO IXsdTypeDefParticle
+    apply<T, TRet>(visitor: IXsdTypeDefParticleVisitor<T, TRet>, arg: T): TRet;
+}
+export interface IXsdTypeDefParticleVisitor<T, TRet> {
 }
 
 //   <xs:group name="nestedParticle">
@@ -804,8 +806,11 @@ export interface IXsdTypeDefParticle {
 //     </xs:choice>
 //   </xs:group>
 export interface IXsdNestedParticle {
-    // TODO IXsdNestedParticle
+    apply<T, TRet>(visitor: IXsdNestedParticleVisitor<T, TRet>, arg: T): TRet;
 }
+export interface IXsdNestedParticleVisitor<T, TRet> {
+}
+
 
 //   <xs:group name="particle">
 //     <xs:choice>
@@ -818,7 +823,9 @@ export interface IXsdNestedParticle {
 //     </xs:choice>
 //   </xs:group>
 export interface IXsdParticle {
-    // TODO IXsdParticle
+    apply<T, TRet>(visitor: IXsdParticleVisitor<T, TRet>, arg: T): TRet;
+}
+export interface IXsdParticleVisitor<T, TRet> {
 }
 
 //   <xs:complexType name="attribute">
@@ -837,6 +844,16 @@ export interface IXsdParticle {
 //               <xs:enumeration value="required"/>
 //             </xs:restriction>
 //           </xs:simpleType>
+export enum XsdAttributeUse {
+    Prohibited = 'prohibited',
+    Optional = 'optional',
+    Required = 'required',
+}
+@XmlSimpleType()                                                            // ok
+class XsdAttributeUseType {
+    @XmlEnumerationValues(XsdAttributeUse)
+    enumeration: XsdAttributeUse;
+}
 //         </xs:attribute>
 //         <xs:attribute name="default" type="xs:string"/>
 //         <xs:attribute name="fixed" type="xs:string"/>
@@ -861,8 +878,8 @@ export class XsdAttributeImpl extends XsdAttribute implements IXsdAttrsDecls {
     @XmlAttribute()
     type?: string;
 
-    @XmlAttribute()
-    use?: string;
+    @XmlAttribute({required: false, default: XsdAttributeUse.Optional})
+    use?: XsdAttributeUse;
 
     @XmlAttribute()
     default?: string;
@@ -872,6 +889,10 @@ export class XsdAttributeImpl extends XsdAttribute implements IXsdAttrsDecls {
 
     @XmlAttribute()
     form?: XsdFormChoice;
+
+    public apply<T, TRet>(visitor: IXsdAttrsDeclsVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitXsdAttribute(this, arg);
+    }
 }
 
 //   <xs:element name="attribute" type="xs:topLevelAttribute" id="attribute">
@@ -967,13 +988,17 @@ export class XsdNamedAttributeGroup extends XsdAttributeGroup implements IXsdRed
 //     </xs:complexContent>
 //   </xs:complexType>
 @XmlComplexType({name: 'attributeGroupRef'})                                                    // ok
-export class XsdAttributeGroupRef extends XsdAttributeGroup {
+export class XsdAttributeGroupRef extends XsdAttributeGroup implements IXsdAttrsDecls {
     
     @XmlElement({order: 1, name: 'annotation', type: { ctor: () => XsdAnnotation }, minOccurs: 0})
     annotation: XsdAnnotation;
 
     @XmlAttribute({required: true})
     ref: string;
+ 
+    public apply<T, TRet>(visitor: IXsdAttrsDeclsVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitXsdAttributeGroupRef(this, arg);
+    }
 }
 
 //   <xs:group name="attrDecls">
@@ -983,7 +1008,11 @@ export class XsdAttributeGroupRef extends XsdAttributeGroup {
 //         <xs:element name="attributeGroup" type="xs:attributeGroupRef"/>
 //       </xs:choice>
 export interface IXsdAttrsDecls {
-    // TODO IXsdAttrsDecls
+    apply<T, TRet>(visitor: IXsdAttrsDeclsVisitor<T, TRet>, arg: T): TRet;
+}
+export interface IXsdAttrsDeclsVisitor<T, TRet> {
+    visitXsdAttribute(attr: XsdAttributeImpl, arg: T): TRet;
+    visitXsdAttributeGroupRef(groupRef: XsdAttributeGroupRef, arg: T): TRet;
 }
 //       <xs:element ref="xs:anyAttribute" minOccurs="0"/>
 //     </xs:sequence>
@@ -1059,7 +1088,12 @@ export class XsdRealGroup extends XsdGroup {
 //             <xs:element name="sequence" type="xs:simpleExplicitGroup"/>
 //           </xs:choice>
 export interface IXsdNamedGroupParticle {
-    // TODO IXsdNamedGroupParticle    
+    apply<T, TRet>(visitor: IXsdNamedGroupParticleVisitor<T, TRet>, arg: T): TRet;
+}
+export interface IXsdNamedGroupParticleVisitor<T, TRet> {
+    visitAllGroupParticle(all: XsdNamedAllParticleGroup, arg: T): TRet;
+    visitChoiceGroupParticle(choice: XsdSimpleExplicitChoiceGroup, arg: T): TRet;
+    visitSequenceGroupParticle(seq: XsdSimpleExplicitSequenceGroup, arg: T): TRet;
 }
 //         </xs:sequence>
 //         <xs:attribute name="name" use="required" type="xs:NCName"/>
@@ -1210,7 +1244,10 @@ export class XsdAllImpl extends XsdAll {
     occurs: XsdOccursAttrGroup;
 }
 @XmlComplexType()
-export class XsdNamedAllParticleGroup extends XsdAll {   
+export class XsdNamedAllParticleGroup extends XsdAll implements IXsdNamedGroupParticle {
+    public apply<T, TRet>(visitor: IXsdNamedGroupParticleVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitAllGroupParticle(this, arg);
+    }
 }
 
 //   <xs:complexType name="simpleExplicitGroup">
@@ -1230,10 +1267,16 @@ export class XsdNamedAllParticleGroup extends XsdAll {
 export class XsdSimpleExplicitGroup extends XsdExplicitGroupBase {
 }
 @XmlComplexType()
-export class XsdSimpleExplicitChoiceGroup extends XsdSimpleExplicitGroup {
+export class XsdSimpleExplicitChoiceGroup extends XsdSimpleExplicitGroup implements IXsdNamedGroupParticle {
+    public apply<T, TRet>(visitor: IXsdNamedGroupParticleVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitChoiceGroupParticle(this, arg);
+    }
 }
 @XmlComplexType()
-export class XsdSimpleExplicitSequenceGroup extends XsdSimpleExplicitGroup {
+export class XsdSimpleExplicitSequenceGroup extends XsdSimpleExplicitGroup implements IXsdNamedGroupParticle {
+    public apply<T, TRet>(visitor: IXsdNamedGroupParticleVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitSequenceGroupParticle(this, arg);
+    }
 }
 
 //   <xs:complexType name="restrictionType">
@@ -1269,7 +1312,7 @@ export class XsdRestrictionType extends XsdAnnotated {                          
 //     </xs:complexContent>
 //   </xs:complexType>
 @XmlComplexType({name: 'complexRestrictionType'})
-export class XsdComplexRestrictionType extends XsdRestrictionType {                          // ok
+export class XsdComplexRestrictionType extends XsdRestrictionType implements IXsdComplexContent { // ok
     @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
     @XmlChoice({order: 2, minOccurs: 0})
@@ -1282,6 +1325,10 @@ export class XsdComplexRestrictionType extends XsdRestrictionType {             
     attrDecls: XsdAttrDecls;
     @XmlAttribute()
     base: string;
+
+    public apply<T, TRet>(visitor: IXsdComplexContentVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitComplexRestrictionModel(this, arg);
+    }
 }
 
 //   <xs:complexType name="extensionType">
@@ -1300,7 +1347,7 @@ export class XsdExtensionType extends XsdAnnotated {                            
     // TODO XsdExtensionType
 }
 @XmlComplexType()
-export class XsdExtensionTypeImpl extends XsdExtensionType {
+export class XsdExtensionTypeImpl extends XsdExtensionType implements IXsdComplexContent {
     @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
     @XmlChoice({order: 2, minOccurs: 0})
@@ -1313,6 +1360,10 @@ export class XsdExtensionTypeImpl extends XsdExtensionType {
     attrDecls: XsdAttrDecls;
     @XmlAttribute()
     base: string;
+
+    public apply<T, TRet>(visitor: IXsdComplexContentVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitComplexExtensionModel(this, arg);
+    }
 }
 
 //   <xs:element name="complexContent" id="complexContent">
@@ -1327,7 +1378,11 @@ export class XsdExtensionTypeImpl extends XsdExtensionType {
 //             <xs:element name="extension" type="xs:extensionType"/>
 //           </xs:choice>
 export interface IXsdComplexContent {
-    // TODO IXsdComplexContent
+    apply<T, TRet>(visitor: IXsdComplexContentVisitor<T, TRet>, arg: T): TRet;
+}
+export interface IXsdComplexContentVisitor<T, TRet> {
+    visitComplexExtensionModel(ctext: XsdExtensionTypeImpl, arg: T): TRet;
+    visitComplexRestrictionModel(ctrst: XsdComplexRestrictionType, arg: T): TRet;
 }
 //           <xs:attribute name="mixed" type="xs:boolean" />
 //         </xs:extension>
@@ -1335,7 +1390,7 @@ export interface IXsdComplexContent {
 //     </xs:complexType>
 //   </xs:element>
 @XmlComplexType({name: 'complexContent'})
-export class XsdComplexContent extends XsdAnnotated {                                           // ok
+export class XsdComplexContent extends XsdAnnotated implements IXsdComplexTypeModel {                                           // ok
     
     @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
@@ -1347,6 +1402,10 @@ export class XsdComplexContent extends XsdAnnotated {                           
 
     @XmlAttribute()
     mixed: boolean;
+
+    public apply<T, TRet>(visitor: IXsdComplexTypeModelVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitComplexContentModel(this, arg);
+    }
 }
 
 //   <xs:complexType name="simpleRestrictionType">
@@ -1422,7 +1481,7 @@ export interface IXsdSimpleContent {
 //     </xs:complexType>
 //   </xs:element>
 @XmlComplexType({name: 'simpleContent'})
-export class XsdSimpleContent extends XsdAnnotated {                                            // ok
+export class XsdSimpleContent extends XsdAnnotated implements IXsdComplexTypeModel {                                            // ok
     @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
 
@@ -1430,6 +1489,10 @@ export class XsdSimpleContent extends XsdAnnotated {                            
     @XmlElement({name: 'restriction', type: {ctor: () => XsdSimpleRestrictionType}})
     @XmlElement({name: 'extension', type: {ctor: () => XsdSimpleExtensionType}})
     content: IXsdSimpleContent;
+
+    public apply<T, TRet>(visitor: IXsdComplexTypeModelVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitSimpleContentModel(this, arg);
+    }
 }
 
 //   <xs:group name="complexTypeModel">
@@ -1443,7 +1506,12 @@ export class XsdSimpleContent extends XsdAnnotated {                            
 //     </xs:choice>
 //   </xs:group>
 export interface IXsdComplexTypeModel {
-    // TODO IXsdComplexTypeModel
+    apply<T, TRet>(visitor: IXsdComplexTypeModelVisitor<T, TRet>, arg: T): TRet;
+}
+export interface IXsdComplexTypeModelVisitor<T, TRet> {
+    visitComplexContentModel(cmodel: XsdComplexContent, arg: T): TRet;
+    visitSimpleContentModel(smodel: XsdSimpleContent, arg: T): TRet;
+    visitImplicitComplexTypeModel(icmodel: XsdImplicitComplexTypeModel, arg: T): TRet;
 }
 @XmlElementsGroup()                                                                             // ok
 export class XsdImplicitComplexTypeModel implements IXsdComplexTypeModel {
@@ -1455,6 +1523,10 @@ export class XsdImplicitComplexTypeModel implements IXsdComplexTypeModel {
     particles: IXsdTypeDefParticle;
     @XmlElementsGroupEntry({order: 2, ctor: () => XsdAttrDecls})
     attrDecls: XsdAttrDecls;
+
+    public apply<T, TRet>(visitor: IXsdComplexTypeModelVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitImplicitComplexTypeModel(this, arg);
+    }
 }
 
 //   <xs:complexType name="complexType" abstract="true">
