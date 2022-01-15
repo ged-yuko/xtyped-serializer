@@ -270,9 +270,9 @@ export abstract class TsTypeRef extends TsSourceItem  {
         super();
     }
 
-    public static makeBuiltin(kind: TsBuiltinTypeKind): TsTypeRef { return new TsBuiltinTypeRef(kind); }
-    public static makeArray(number, elementType: TsTypeRef): TsTypeRef { return new TsArrayTypeRef(elementType); }
-    public static makeCustom(name: string, genericArgs?: TsTypeRef[]): TsTypeRef { return new TsCustomTypeRef(name, genericArgs); }
+    public static makeBuiltin(kind: TsBuiltinTypeKind): TsBuiltinTypeRef { return new TsBuiltinTypeRef(kind); }
+    public static makeArray(number, elementType: TsTypeRef): TsArrayTypeRef { return new TsArrayTypeRef(elementType); }
+    public static makeCustom(name: string, genericArgs?: TsTypeRef[]): TsCustomTypeRef { return new TsCustomTypeRef(name, genericArgs); }
 
     public apply<T, TRet>(visitor: ITsTypeRefVisitor<T, TRet>, arg: T): TRet { return this.applyImpl(visitor, arg); }
     protected abstract applyImpl<T, TRet>(visitor: ITsTypeRefVisitor<T, TRet>, arg: T): TRet;
@@ -421,8 +421,11 @@ export class TsMethodDecl extends TsNamedMember {
 }
 
 export class TsInterfaceDef extends TsCustomTypeDef<TsMethodDecl> implements ITsSourceUnitMember {
-    public constructor(name: string) {
+    public readonly baseInterfaces: Array<TsTypeRef>;
+    
+    public constructor(name: string, baseIfaces?: Array<TsTypeRef>) {
         super(name);
+        this.baseInterfaces = baseIfaces ?? new Array<TsTypeRef>();
     }
 
     public createMethod(name: string, signature: TsMethodSignature): TsMethodDecl { 
@@ -463,9 +466,13 @@ export class TsMethodDef extends TsClassMember implements ITsClassMember { // sp
 
 export class TsClassDef extends TsCustomTypeDef<TsClassMember> implements ITsSourceUnitMember {
     public readonly annotations = new TsAnnotationsCollection();
+    public readonly baseType: TsCustomTypeRef|undefined;
+    public readonly interfaces: Array<TsTypeRef>;
 
-    public constructor(name: string) {
+    public constructor(name: string, baseType?: TsCustomTypeRef, ifaces?: Array<TsTypeRef>) {
         super(name);
+        this.baseType = baseType;
+        this.interfaces = ifaces ?? new Array<TsTypeRef>();
     }
 
     public createMethod(name: string, signature: TsMethodSignature): TsMethodDef { 
@@ -514,12 +521,12 @@ export class TsSourceUnit extends TsNamedOrderedCollection<ITsSourceUnitMember> 
         super(name);
     }
 
-    public createClass(name: string): TsClassDef {
-        return this.register(new TsClassDef(name)); 
+    public createClass(name: string, baseClass?: TsCustomTypeRef, ... ifaces: TsTypeRef[]): TsClassDef {
+        return this.register(new TsClassDef(name, baseClass, ifaces)); 
     }
 
-    public createInterface(name: string): TsInterfaceDef {
-        return this.register(new TsInterfaceDef(name)); 
+    public createInterface(name: string, ... ifaces: TsTypeRef[]): TsInterfaceDef {
+        return this.register(new TsInterfaceDef(name, ifaces)); 
     }
 
     public createEnum(name: string, members?: { name: string, value?: any }[]): TsEnumDef {

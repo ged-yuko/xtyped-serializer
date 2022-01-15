@@ -794,6 +794,10 @@ export interface IXsdTypeDefParticle {
     apply<T, TRet>(visitor: IXsdTypeDefParticleVisitor<T, TRet>, arg: T): TRet;
 }
 export interface IXsdTypeDefParticleVisitor<T, TRet> {
+    visitSequenceGroup(seqGroup: XsdExplicitSequenceGroupImpl, arg: T): TRet;
+    visitChoiceGroup(choiceGroup: XsdExplicitChoiceGroupImpl, arg: T): TRet;
+    visitAllGroup(allGroup: XsdAllImpl, arg: T): TRet;
+    visitGroupRef(groupRef: XsdGroupRef, arg: T): TRet;
 }
 
 //   <xs:group name="nestedParticle">
@@ -1137,7 +1141,7 @@ export class XsdNamedGroup extends XsdRealGroup implements IXsdRedefinable {
 //     </xs:complexContent>
 //   </xs:complexType>
 @XmlComplexType({name: 'groupRef'})                                                                 // ok
-export class XsdGroupRef extends XsdRealGroup {
+export class XsdGroupRef extends XsdRealGroup implements IXsdTypeDefParticle {
     @XmlElement({order: 1, name: 'annotation', minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
 
@@ -1145,6 +1149,10 @@ export class XsdGroupRef extends XsdRealGroup {
     ref: string;
     @XmlAttributesGroupEntry({ctor: () => XsdOccursAttrGroup})
     occurs: XsdOccursAttrGroup;
+
+    apply<T, TRet>(visitor: IXsdTypeDefParticleVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitGroupRef(this, arg);
+    }
 }
 
 //   <xs:element name="choice" type="xs:explicitGroup" id="choice">
@@ -1196,10 +1204,16 @@ export class XsdExplicitGroupImpl extends XsdExplicitGroupBase {
     occurs: XsdOccursAttrGroup;
 }
 @XmlComplexType()
-export class XsdExplicitChoiceGroupImpl extends XsdExplicitGroupImpl {
+export class XsdExplicitChoiceGroupImpl extends XsdExplicitGroupImpl implements IXsdTypeDefParticle {
+    apply<T, TRet>(visitor: IXsdTypeDefParticleVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitChoiceGroup(this, arg);
+    }
 }
 @XmlComplexType()
-export class XsdExplicitSequenceGroupImpl extends XsdExplicitGroupImpl {
+export class XsdExplicitSequenceGroupImpl extends XsdExplicitGroupImpl implements IXsdTypeDefParticle {
+    apply<T, TRet>(visitor: IXsdTypeDefParticleVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitSequenceGroup(this, arg);
+    }
 }
 
 //   <xs:element name="all" id="all" type="xs:all">
@@ -1239,9 +1253,13 @@ export class XsdAll extends XsdExplicitGroup {
     elements = new Array<XsdNarrowMaxMin>();
 }
 @XmlComplexType()
-export class XsdAllImpl extends XsdAll {
+export class XsdAllImpl extends XsdAll implements IXsdTypeDefParticle {
     @XmlAttributesGroupEntry({ctor: () => XsdOccursAttrGroup})
     occurs: XsdOccursAttrGroup;
+
+    apply<T, TRet>(visitor: IXsdTypeDefParticleVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitAllGroup(this, arg);
+    }
 }
 @XmlComplexType()
 export class XsdNamedAllParticleGroup extends XsdAll implements IXsdNamedGroupParticle {
@@ -1320,7 +1338,7 @@ export class XsdComplexRestrictionType extends XsdRestrictionType implements IXs
     @XmlElement({name: 'all', type: {ctor: () => XsdAllImpl}})
     @XmlElement({name: 'choice', type: {ctor: () => XsdExplicitChoiceGroupImpl}})
     @XmlElement({name: 'sequence', type: {ctor: () => XsdExplicitSequenceGroupImpl}})
-    particles: IXsdTypeDefParticle;
+    particles = new Array<IXsdTypeDefParticle>();
     @XmlElementsGroupEntry({order: 3, ctor: () => XsdAttrDecls})
     attrDecls: XsdAttrDecls;
     @XmlAttribute()
@@ -1355,7 +1373,7 @@ export class XsdExtensionTypeImpl extends XsdExtensionType implements IXsdComple
     @XmlElement({name: 'all', type: {ctor: () => XsdAllImpl}})
     @XmlElement({name: 'choice', type: {ctor: () => XsdExplicitChoiceGroupImpl}})
     @XmlElement({name: 'sequence', type: {ctor: () => XsdExplicitSequenceGroupImpl}})
-    particles: IXsdTypeDefParticle;
+    particles = new Array<IXsdTypeDefParticle>();
     @XmlElementsGroupEntry({order: 3, ctor: () => XsdAttrDecls})
     attrDecls: XsdAttrDecls;
     @XmlAttribute()
