@@ -271,7 +271,7 @@ export abstract class TsTypeRef extends TsSourceItem  {
     }
 
     public static makeBuiltin(kind: TsBuiltinTypeKind): TsBuiltinTypeRef { return new TsBuiltinTypeRef(kind); }
-    public static makeArray(number, elementType: TsTypeRef): TsArrayTypeRef { return new TsArrayTypeRef(elementType); }
+    public static makeArray(elementType: TsTypeRef): TsArrayTypeRef { return new TsArrayTypeRef(elementType); }
     public static makeCustom(name: string, genericArgs?: TsTypeRef[]): TsCustomTypeRef { return new TsCustomTypeRef(name, genericArgs); }
 
     public apply<T, TRet>(visitor: ITsTypeRefVisitor<T, TRet>, arg: T): TRet { return this.applyImpl(visitor, arg); }

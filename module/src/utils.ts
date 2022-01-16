@@ -72,6 +72,10 @@ export function splitArrayByType<T, R, O = Exclude<T, R>>(arr: T[], Class: AnyCt
     return result;
 }
 
+export function asInstanceOf<T>(Class: AnyCtorOf<T>) : (o: any) => T|undefined {
+    return (o): T|undefined => o instanceof Class ? o : undefined;
+}
+
 export function testInstanceOf<T>(Class: AnyCtorOf<T>) : (o: any) => o is T {
     return (o): o is T => o instanceof Class;
 }

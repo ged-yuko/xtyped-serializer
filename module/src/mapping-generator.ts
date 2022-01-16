@@ -1,11 +1,11 @@
-import { IXsdAttrsDeclsVisitor, IXsdComplexContentVisitor, IXsdComplexTypeModelVisitor, IXsdNamedGroupParticle, IXsdNamedGroupParticleVisitor, IXsdNestedParticle, IXsdNestedParticleVisitor, IXsdSchemaDeclarationVisitor, IXsdSchemaDefinition, IXsdSchemaDefinitionVisitor, IXsdTypeDefParticle, IXsdTypeDefParticleVisitor, XsdAllImpl, XsdAnnotation, XsdAttrDecls, XsdAttributeGroupRef, XsdAttributeImpl, XsdAttributeUse, XsdComplexContent, XsdComplexRestrictionType, XsdComplexType, XsdExplicitChoiceGroupImpl, XsdExplicitSequenceGroupImpl, XsdExtensionTypeImpl, XsdFormChoice, XsdGroupRef, XsdImplicitComplexTypeModel, XsdImport, XsdInclude, XsdNamedAllParticleGroup, XsdNamedAttributeGroup, XsdNamedGroup, XsdNotation, XsdRedefine, XsdSchema, XsdSimpleContent, XsdSimpleExplicitChoiceGroup, XsdSimpleExplicitSequenceGroup, XsdTopLevelAttribute, XsdTopLevelComplexType, XsdTopLevelElement, XsdTopLevelSimpleType } from './xsdschema2'
+import { IXsdAttrsDeclsVisitor, IXsdComplexContentVisitor, IXsdComplexTypeModelVisitor, IXsdLocalType, IXsdNamedGroupParticle, IXsdNamedGroupParticleVisitor, IXsdNestedParticle, IXsdNestedParticleVisitor, IXsdSchemaDeclarationVisitor, IXsdSchemaDefinition, IXsdSchemaDefinitionVisitor, IXsdTopLevelElementLocalType, IXsdTypeDefParticle, IXsdTypeDefParticleVisitor, XsdAllImpl, XsdAnnotation, XsdAny, XsdAttrDecls, XsdAttributeGroupRef, XsdAttributeImpl, XsdAttributeUse, XsdComplexContent, XsdComplexRestrictionType, XsdComplexType, XsdExplicitChoiceGroupImpl, XsdExplicitSequenceGroupImpl, XsdExtensionTypeImpl, XsdFormChoice, XsdGroupRef, XsdImplicitComplexTypeModel, XsdImport, XsdInclude, XsdLocalComplexType, XsdLocalElement, XsdNamedAllParticleGroup, XsdNamedAttributeGroup, XsdNamedGroup, XsdNotation, XsdOccursAttrGroup, XsdRedefine, XsdSchema, XsdSimpleContent, XsdSimpleExplicitChoiceGroup, XsdSimpleExplicitSequenceGroup, XsdTopLevelAttribute, XsdTopLevelComplexType, XsdTopLevelElement, XsdTopLevelSimpleType } from './xsdschema2'
 import xs from './serializer'
 import { ITsClassMemberVisitor, ITsExprVisitor, ITsSourceUnitMemberVisitor, ITsTypeRefVisitor, TsAnnotationsCollection, TsArrayLiteralExpr, TsArrayTypeRef, TsBooleanExpr, TsBuiltinTypeKind, TsBuiltinTypeRef, TsClassDef, TsCtorRefExpr, TsCustomTypeRef, TsEnumDef, TsExpr, TsFieldDef, TsLambdaExpr as TsLambdaExpr, TsInterfaceDef, TsMethodDef, TsMethodSignature, TsNullExpr, TsNumberExpr, TsObjLiteralExpr, TsSourceUnit, TsStringExpr, TsTypeRef, TsUndefinedExpr } from './ts-dom'
 import * as ts from 'typescript'
 import * as fs from 'fs'
 import { foreachSeparating, IndentedStringBuilder, LinkedQueue } from './utils'
-import { XmlDataModel } from './content-model'
-import { XmlComplexType, XmlElementsGroup, XmlAttributesGroup, XmlAttribute, XmlAttributesGroupEntry, IXmlAttributeParameters } from './annotations'
+import { XmlDataModel, XmlElementChoiceGroupModel } from './content-model'
+import { XmlComplexType, XmlElementsGroup, XmlAttributesGroup, XmlAttribute, XmlAttributesGroupEntry, IXmlAttributeParameters, XmlElementsGroupEntry, XmlElement } from './annotations'
 
 class TscSourceTextBuilder implements ITsSourceUnitMemberVisitor<undefined, ts.Node> {
                                     // ITsClassMemberVisitor<undefined, void>,
@@ -213,6 +213,7 @@ type FixupOperation = () => FixupOperations;
 type FixupOperations = FixupOperation[];
 
 interface IGroupModel {
+    name: string;
 }
 
 abstract class DefinitionTypesModel {
@@ -239,7 +240,7 @@ class ChoiceGroupIfaceModel extends DefinitionTypesModel implements IGroupModel 
 
     public constructor(
         context: NamespaceModel,
-        private readonly name: string,
+        public readonly name: string,
         private readonly definition: XsdExplicitChoiceGroupImpl|XsdSimpleExplicitChoiceGroup
     ) {
         super(context);
@@ -250,64 +251,133 @@ class ChoiceGroupIfaceModel extends DefinitionTypesModel implements IGroupModel 
     }
 }
 
-class ClassFieldModel {
+abstract class ClassFieldModel {
     public constructor(
-        public readonly name: string
+        public readonly name: string,
+        private readonly itemOccurs: XsdOccursAttrGroup,
+        protected readonly itemTypeRef: TsTypeRef
     ) {
     }
 
     public implement(classDef: TsClassDef) : void {
-        return this.implementImpl(classDef);
+        const min = this.itemOccurs.min ?? 1;
+        const max = this.itemOccurs.max ?? 1;
+
+        let itemTypeRef = max === 1 ? this.itemTypeRef : TsTypeRef.makeArray(this.itemTypeRef);
+        let isOptional = min === 0 && max === 1;
+
+        const fieldDef = classDef.createField(this.name, itemTypeRef, isOptional);
+        return this.implementImpl(fieldDef);
     }
-    
-    protected implementImpl(classDef: TsClassDef) : void {
-        classDef.createField(this.name, TsTypeRef.makeBuiltin(TsBuiltinTypeKind.Any));
+
+    protected abstract implementImpl(classDef: TsFieldDef) : void;
+
+    protected makeOccursAnnotationParams() : [string, TsExpr][] {
+        const arr = new Array<[string, TsExpr]>();
+        if (this.itemOccurs.min) {
+            arr.push(['minOccurs', TsExpr.literalFromExample(this.itemOccurs.min)]);
+        }
+        if (this.itemOccurs.max) {
+            arr.push(['minOccurs', TsExpr.literalFromExample(this.itemOccurs.max)]);
+        }
+        return arr;
     }
 }
 class ClassAttributeFieldModel extends ClassFieldModel {
     public constructor(
         name: string,
-        public readonly attrDef: XsdAttributeImpl
+        public readonly attrDef: XsdAttributeImpl,
+        public readonly topLevelDef?: XsdTopLevelAttribute
     ) {
-        super(name);
+        super(name, { min: attrDef.use === XsdAttributeUse.Optional ? 0 : 1 }, TsTypeRef.makeBuiltin(TsBuiltinTypeKind.String)); // TODO simple types
     }
     
-    protected override implementImpl(classDef: TsClassDef): void {
+    protected override implementImpl(fieldDef: TsFieldDef) : void {
         const attr = this.attrDef;
-        if (attr.defRef.ref) {
-            throw new Error('attr ref not implemented');
-        } else if (attr.defRef.name) {
-            const isOptional = attr.use === XsdAttributeUse.Optional || !attr.use;
-            const fd = classDef.createField(attr.defRef.name, TsTypeRef.makeBuiltin(TsBuiltinTypeKind.String), isOptional);
+        const isOptional = attr.use === XsdAttributeUse.Optional || !attr.use;
 
-            const aargs = TsExpr.object();
-            if (attr.default) {
-                aargs.items.set('default', TsExpr.string(attr.default));
-            }
-            if (attr.form === XsdFormChoice.Qualified) {
-                aargs.items.set('qualified', TsExpr.bool(true));
-            }
-            if (!isOptional) {
-                aargs.items.set('required', TsExpr.bool(true));
-            }
-            fd.annotations.addByName(XmlAttribute.name, aargs);
+        const aargs = TsExpr.object();
+        if (attr.default) {
+            aargs.items.set('default', TsExpr.string(attr.default));
         }
+        if (attr.form === XsdFormChoice.Qualified) {
+            aargs.items.set('qualified', TsExpr.bool(true));
+        }
+        if (!isOptional) {
+            aargs.items.set('required', TsExpr.bool(true));
+        }
+        fieldDef.annotations.addByName(XmlAttribute.name, aargs);
     }
 }
 class ClassAttributeGroupFieldModel extends ClassFieldModel {
     public constructor(
         name: string,
-        public readonly groupRef: XsdAttributeGroupRef
+        public readonly groupRef: XsdAttributeGroupRef,
+        public readonly groupModel: IGroupModel
     ) {
-        super(name);
+        super(name, { }, TsTypeRef.makeCustom(groupModel.name));
     }
     
-    protected override implementImpl(classDef: TsClassDef): void {
-        const groupRef = this.groupRef;
-        const fd = classDef.createField(groupRef.ref, TsTypeRef.makeCustom(groupRef.ref));
-        fd.annotations.addByName(XmlAttributesGroupEntry.name, TsExpr.object([
-            ['ctor', TsExpr.lambda(TsMethodSignature.nothingToUnpsecified(), TsExpr.ctorRef(groupRef.ref))]
+    protected override implementImpl(fieldDef: TsFieldDef) : void {
+        fieldDef.annotations.addByName(XmlAttributesGroupEntry.name, TsExpr.object([
+            ['ctor', TsExpr.lambda(TsMethodSignature.nothingToUnpsecified(), TsExpr.ctorRef(this.groupModel.name))]
         ]));
+    }
+}
+class ClassLocalElementFieldModel extends ClassFieldModel {
+    public constructor(
+        name: string,
+        public readonly element: XsdLocalElement,
+        public readonly topLevelelement: XsdTopLevelElement|undefined,
+        public readonly elementModel: ComplexTypeClassModel
+    ) {
+        super(name, element.occurs, TsTypeRef.makeCustom(elementModel.name));
+    }
+    
+    protected override implementImpl(fieldDef: TsFieldDef) : void {
+        fieldDef.annotations.addByName(XmlElement.name, TsExpr.object([
+            ['type', TsExpr.object([
+                ['ctor', TsExpr.lambda(TsMethodSignature.nothingToUnpsecified(), TsExpr.ctorRef(this.elementModel.name))]
+            ])],
+            ... this.makeOccursAnnotationParams()
+        ]));
+    }
+}
+class ClassElementsGroupFieldModel extends ClassFieldModel {
+    public constructor(
+        name: string,
+        public readonly groupRefOrSeq: XsdGroupRef|XsdExplicitSequenceGroupImpl,
+        public readonly groupModel: IGroupModel
+    ) {
+        super(name, groupRefOrSeq.occurs, TsTypeRef.makeCustom(groupModel.name));
+    }
+    
+    protected override implementImpl(fieldDef: TsFieldDef) : void {
+        fieldDef.annotations.addByName(XmlElementsGroupEntry.name, TsExpr.object([
+            ['ctor', TsExpr.lambda(TsMethodSignature.nothingToUnpsecified(), TsExpr.ctorRef(this.groupModel.name))]
+        ]));
+    }
+}
+class ClassElementsChoiceFieldModel extends ClassFieldModel {
+    public constructor(
+        name: string,
+        public readonly choiceDef: XsdExplicitChoiceGroupImpl,
+        public readonly choiceModel: IGroupModel
+    ) {
+        super(name, choiceDef.occurs, TsTypeRef.makeCustom(choiceModel.name));
+    }
+    
+    protected override implementImpl(fieldDef: TsFieldDef) : void {
+        // TODO pre-resolve all type refs and generate a number of annotations each for possible member instance type
+
+        // TODO generalize typeref-able annotations implementation
+
+        // fieldDef.annotations.addByName(XmlElementsGroupEntry.name, TsExpr.object([
+        //     ['type', TsExpr.object([
+        //         ['ctor', TsExpr.lambda(TsMethodSignature.nothingToUnpsecified(), TsExpr.ctorRef(this.seqModel.name))]
+        //     ])],
+        //     ... this.makeOccursAnnotationParams()
+        // ]));
     }
 }
 
@@ -321,28 +391,19 @@ abstract class ClassModel extends DefinitionTypesModel {
 
     protected constructor(
         context: NamespaceModel,
-        protected readonly name: string,
+        public readonly name: string,
         protected readonly abstract: boolean
     ) {
         super(context);
     }
 
-    protected registerField(name: string, def: XsdAttributeImpl|XsdAttributeGroupRef) : ClassFieldModel {
-        if (this._fields.get(name)) {
-            throw new Error(`Field ${name} already registered`);
-        }
-
-        let m: ClassFieldModel;
-        if (def instanceof XsdAttributeImpl) {
-            m = new ClassAttributeFieldModel(name, def);
-        } else if (def instanceof XsdAttributeGroupRef) {
-            m = new ClassAttributeGroupFieldModel(name, def);
+    protected registerField(fieldModel: ClassFieldModel) : ClassFieldModel {
+        if (this._fields.get(fieldModel.name)) {
+            throw new Error(`Field ${fieldModel.name} already registered`);
         } else {
-            console.error('unknown field model kind');
-            m = new ClassFieldModel(name);
+            this._fields.set(fieldModel.name, fieldModel);
         }
-        this._fields.set(name, m);
-        return m;
+        return fieldModel;
     }
 }
 
@@ -400,10 +461,10 @@ class ComplexTypeClassModel extends ClassModel {
 
                 return cmodel.content.apply(new class implements IXsdComplexContentVisitor<ComplexTypeClassModel, FixupOperations> {
                     visitComplexExtensionModel(ctext: XsdExtensionTypeImpl, me: ComplexTypeClassModel): FixupOperations {
-                        return me.registerExplicitMembers(ctext.base, InheritanceMode.Extension, ctext.particles, ctext.attrDecls);
+                        return me.dispatchExplicitMembers(ctext.base, InheritanceMode.Extension, ctext.particles, ctext.attrDecls);
                     }
                     visitComplexRestrictionModel(ctrst: XsdComplexRestrictionType, me: ComplexTypeClassModel): FixupOperations {
-                        return me.registerExplicitMembers(ctrst.base, InheritanceMode.Restriction, ctrst.particles, ctrst.attrDecls);
+                        return me.dispatchExplicitMembers(ctrst.base, InheritanceMode.Restriction, ctrst.particles, ctrst.attrDecls);
                     }
                 }, me);
             }
@@ -416,7 +477,7 @@ class ComplexTypeClassModel extends ClassModel {
         }, this);
     }
 
-    private registerExplicitMembers(baseComplexTypeName: string, inheritanceMode: InheritanceMode, particles: IXsdTypeDefParticle[], attrDecls: XsdAttrDecls) : FixupOperations {
+    private dispatchExplicitMembers(baseComplexTypeName: string, inheritanceMode: InheritanceMode, particles: IXsdTypeDefParticle[], attrDecls: XsdAttrDecls) : FixupOperations {
         this._baseTypeModel = this.context.complexTypes.get(baseComplexTypeName);
         this._inheritanceMode = inheritanceMode;
         
@@ -424,37 +485,133 @@ class ComplexTypeClassModel extends ClassModel {
             // TODO extract it to superclass, consider attribute group model
             attrDecls.decls.flatMap(attrPart => attrPart.apply(new class implements IXsdAttrsDeclsVisitor<ComplexTypeClassModel, FixupOperations> {
                 visitXsdAttribute(attr: XsdAttributeImpl, me: ComplexTypeClassModel): FixupOperations {
-                    me.registerField(Attr.name, attr);
+                    if (attr.defRef.ref) {
+                        const topLevelAttr = me.context.attributes.get(attr.defRef.ref);
+                        if (topLevelAttr) {
+                            me.registerField(new ClassAttributeFieldModel(topLevelAttr.name, attr, topLevelAttr));
+                        } else {
+                            console.error('missing top level attr reference');
+                        }
+                    } else if (attr.defRef.name) {
+                        me.registerField(new ClassAttributeFieldModel(attr.defRef.name, attr));
+                    } else {
+                        console.error('invalid attr def');
+                    }
                     return [];
                 }
                 visitXsdAttributeGroupRef(groupRef: XsdAttributeGroupRef, me: ComplexTypeClassModel): FixupOperations {
-                    me.registerField(groupRef.ref, groupRef);
+                    const topLevelGroup = me.context.groups.get(groupRef.ref);
+                    if (topLevelGroup) {
+                        me.registerField(new ClassAttributeGroupFieldModel(groupRef.ref, groupRef, topLevelGroup));
+                    } else {
+                        console.error('missing top level group reference');
+                    }
                     return [];
                 }
             }, this)),
             // TODO extract it to superclass, consider elements group
             particles.flatMap(part => part.apply(new class implements IXsdTypeDefParticleVisitor<ComplexTypeClassModel, FixupOperations> {
                 visitSequenceGroup(seqGroup: XsdExplicitSequenceGroupImpl, me: ComplexTypeClassModel): FixupOperations {
-                    return me.registerExplicitNestedMembers(seqGroup);
+                    return me.dispatchExplicitNestedMembers(seqGroup);
                 }
                 visitChoiceGroup(choiceGroup: XsdExplicitChoiceGroupImpl, me: ComplexTypeClassModel): FixupOperations {
-                    return me.registerExplicitNestedMembers(choiceGroup);
+                    return me.dispatchExplicitNestedMembers(choiceGroup);
                 }
                 visitAllGroup(allGroup: XsdAllImpl, me: ComplexTypeClassModel): FixupOperations {
-                    console.error('not supported');
+                    console.error('explicit all part not supported');
                     return [];
                 }
                 visitGroupRef(groupRef: XsdGroupRef, me: ComplexTypeClassModel): FixupOperations {
-                    return me.registerExplicitNestedMembers(groupRef);
+                    return me.dispatchExplicitNestedMembers(groupRef);
                 }
             }, this))
         ].flat();
     }
 
-    private registerExplicitNestedMembers(part: IXsdNestedParticle) : FixupOperations {
+    private dispatchExplicitNestedMembers(part: IXsdNestedParticle) : FixupOperations {
+        // TODO move it to superclass
         return part.apply(new class implements IXsdNestedParticleVisitor<ComplexTypeClassModel, FixupOperations> {
-            // TODO move it to superclass, IXsdNestedParticleVisitor for registerExplicitNestedMembers
+            visitLocalElement(localElement: XsdLocalElement, me: ComplexTypeClassModel): FixupOperations {
+                if (localElement.defRef.ref) {
+                    const topLevelElement = me.context.elements.get(localElement.defRef.ref);
+                    if (topLevelElement) {
+                        const elementModel = me.obtainElementTypeModel(topLevelElement.typeName ?? topLevelElement.name, topLevelElement.localType);
+                        me.registerField(new ClassLocalElementFieldModel(localElement.defRef.ref, localElement, topLevelElement, elementModel));
+                        return elementModel.getDelayedOperations();
+                    } else {
+                        console.error('missing top level element def ' + localElement.defRef.ref);
+                        return [];
+                    }
+                } else if (localElement.defRef.name) {
+                    const elementModel = me.obtainElementTypeModel(localElement.typeName ?? localElement.defRef.name, localElement.localType);
+                    me.registerField(new ClassLocalElementFieldModel(localElement.defRef.name, localElement, undefined, elementModel));
+                    return elementModel.getDelayedOperations();
+                } else {
+                    console.error('invalid element def');
+                    return [];
+                }
+            }
+            visitAnyElement(anyElement: XsdAny, me: ComplexTypeClassModel): FixupOperations {
+                throw new Error('nested any element part not implemented.')
+            }
+            visitGroupRef(groupRef: XsdGroupRef, me: ComplexTypeClassModel): FixupOperations {
+                const topLevelGroup = me.context.groups.get(groupRef.ref);
+                if (topLevelGroup) {
+                    me.registerField(new ClassElementsGroupFieldModel(groupRef.ref, groupRef, topLevelGroup));
+                } else {
+                    console.error('missing top level grop def ' + groupRef.ref);
+                }
+                return [];
+            }
+            visitChoiceGroup(choiceGroup: XsdExplicitChoiceGroupImpl, me: ComplexTypeClassModel): FixupOperations {
+                const num =  me._fields.size;
+                const choiceModel = me.context.createChoiceGroup(me.name + 'Choice' + num, choiceGroup);
+                me.registerField(new ClassElementsChoiceFieldModel('choice' + num, choiceGroup, choiceModel));
+                return choiceModel.getDelayedOperations();
+            }
+            visitSequenceGroup(seqGroup: XsdExplicitSequenceGroupImpl, me: ComplexTypeClassModel): FixupOperations {
+                if (seqGroup.occurs.max ?? 1 > 1) {
+                    const num =  me._fields.size;
+                    const groupModel = me.context.createSequenceGroup(me.name + 'ContentGroup' + num, seqGroup);
+                    me.registerField(new ClassElementsGroupFieldModel('contentGroup' + num, seqGroup, groupModel));
+                    return groupModel.getDelayedOperations();
+                } else {
+                    return seqGroup.particles.flatMap(p => me.dispatchExplicitNestedMembers(p));
+                }
+            }
         }, this);
+    }
+
+    private obtainElementTypeModel(complexTypeName: string, localType?: IXsdTopLevelElementLocalType|IXsdLocalType) : ComplexTypeClassModel {
+        if (localType) {
+            if (this.context.complexTypes.get(complexTypeName)) {
+                complexTypeName = this.name + '_' + complexTypeName;
+            }
+            if (this.context.complexTypes.get(complexTypeName)) {
+                console.warn('TODO: resolve generated type name conflicts');  // TODO: resolve generated type name conflicts'
+            }
+            
+            if (localType instanceof XsdLocalComplexType) {
+                const fakeComplexType = new XsdComplexType();
+                fakeComplexType.annotation = localType.annotation;
+                fakeComplexType.id = localType.id;
+                fakeComplexType.mixed = localType.mixed;
+                fakeComplexType.model = localType.model;
+                fakeComplexType.rawNode = localType.rawNode;
+
+                const model = this.context.createComplexType(complexTypeName, fakeComplexType, false, '', '');
+                return model;
+            } else {
+                throw new Error('unsupported local type kind'); // TODO fix local type visitor
+            }
+        } else {
+            const model = this.context.complexTypes.get(complexTypeName);
+            if (model) {
+                return model;
+            } else {
+                throw new Error('unknown top level complex type');
+            }
+        }
     }
 
     protected override implementDefinitionsImpl(unit: TsSourceUnit) : void {
@@ -497,22 +654,25 @@ class NamespaceModel {
         }
     }
 
-    public createComplexType(name: string, definition: XsdComplexType, abstract: boolean, final: string, block: string ) {
+    public createComplexType(name: string, definition: XsdComplexType, abstract: boolean, final: string, block: string) : ComplexTypeClassModel {
         const model = new ComplexTypeClassModel(this, this.makeTypeName(name), definition, abstract, final, block);
         this.complexTypes.set(name, model);
         this.allModels.push(model);
+        return model;
     }
 
-    public createSequenceGroup(name: string, seq: XsdExplicitSequenceGroupImpl|XsdSimpleExplicitSequenceGroup) : void {
+    public createSequenceGroup(name: string, seq: XsdExplicitSequenceGroupImpl|XsdSimpleExplicitSequenceGroup) : SeqGroupClassModel {
         const model = new SeqGroupClassModel(this, this.makeTypeName(name), seq);
         this.groups.set(name, model);
         this.allModels.push(model);
+        return model;
     }
 
-    public createChoiceGroup(name: string, seq: XsdExplicitChoiceGroupImpl|XsdSimpleExplicitChoiceGroup) : void {
+    public createChoiceGroup(name: string, seq: XsdExplicitChoiceGroupImpl|XsdSimpleExplicitChoiceGroup) : ChoiceGroupIfaceModel {
         const model = new ChoiceGroupIfaceModel(this, this.makeTypeName(name), seq);
         this.groups.set(name, model);
         this.allModels.push(model);
+        return model;
     }
 }
 

@@ -777,9 +777,13 @@ export class XsdWildcard extends XsdAnnotated {
 //     </xs:complexType>
 //   </xs:element>
 @XmlComplexType({name: 'any'})                                                              // ok
-export class XsdAny extends XsdWildcard {
+export class XsdAny extends XsdWildcard implements IXsdNestedParticle {
     @XmlAttributesGroupEntry({ctor: () => XsdOccursAttrGroup})
     occurs: XsdOccursAttrGroup
+
+    apply<T, TRet>(visitor: IXsdNestedParticleVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitAnyElement(this, arg);
+    }
 }
 
 //   <xs:group name="typeDefParticle">
@@ -793,9 +797,9 @@ export class XsdAny extends XsdWildcard {
 export interface IXsdTypeDefParticle {
     apply<T, TRet>(visitor: IXsdTypeDefParticleVisitor<T, TRet>, arg: T): TRet;
 }
-export interface IXsdTypeDefParticleVisitor<T, TRet> {
-    visitSequenceGroup(seqGroup: XsdExplicitSequenceGroupImpl, arg: T): TRet;
-    visitChoiceGroup(choiceGroup: XsdExplicitChoiceGroupImpl, arg: T): TRet;
+export interface IXsdTypeDefParticleVisitor<T, TRet> extends IXsdGroupRefVisitor<T, TRet>, 
+                                                             IXsdExplicitChoiceGroupImplVisitor<T, TRet>,
+                                                             IXsdExplicitSequenceGroupImplVisitor<T, TRet> {
     visitAllGroup(allGroup: XsdAllImpl, arg: T): TRet;
     visitGroupRef(groupRef: XsdGroupRef, arg: T): TRet;
 }
@@ -812,7 +816,11 @@ export interface IXsdTypeDefParticleVisitor<T, TRet> {
 export interface IXsdNestedParticle {
     apply<T, TRet>(visitor: IXsdNestedParticleVisitor<T, TRet>, arg: T): TRet;
 }
-export interface IXsdNestedParticleVisitor<T, TRet> {
+export interface IXsdNestedParticleVisitor<T, TRet> extends IXsdGroupRefVisitor<T, TRet>, 
+                                                            IXsdExplicitChoiceGroupImplVisitor<T, TRet>, 
+                                                            IXsdExplicitSequenceGroupImplVisitor<T, TRet> {
+    visitLocalElement(localElement: XsdLocalElement, arg: T): TRet;
+    visitAnyElement(anyElement: XsdAny, arg: T): TRet;
 }
 
 
@@ -1141,7 +1149,7 @@ export class XsdNamedGroup extends XsdRealGroup implements IXsdRedefinable {
 //     </xs:complexContent>
 //   </xs:complexType>
 @XmlComplexType({name: 'groupRef'})                                                                 // ok
-export class XsdGroupRef extends XsdRealGroup implements IXsdTypeDefParticle {
+export class XsdGroupRef extends XsdRealGroup implements IXsdTypeDefParticle, IXsdNestedParticle {
     @XmlElement({order: 1, name: 'annotation', minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
 
@@ -1150,9 +1158,13 @@ export class XsdGroupRef extends XsdRealGroup implements IXsdTypeDefParticle {
     @XmlAttributesGroupEntry({ctor: () => XsdOccursAttrGroup})
     occurs: XsdOccursAttrGroup;
 
-    apply<T, TRet>(visitor: IXsdTypeDefParticleVisitor<T, TRet>, arg: T): TRet {
+    apply<T, TRet>(visitor: IXsdGroupRefVisitor<T, TRet>, arg: T): TRet {
         return visitor.visitGroupRef(this, arg);
     }
+}
+
+export interface IXsdGroupRefVisitor<T, TRet> {
+    visitGroupRef(groupRef: XsdGroupRef, arg: T): TRet;
 }
 
 //   <xs:element name="choice" type="xs:explicitGroup" id="choice">
@@ -1204,16 +1216,22 @@ export class XsdExplicitGroupImpl extends XsdExplicitGroupBase {
     occurs: XsdOccursAttrGroup;
 }
 @XmlComplexType()
-export class XsdExplicitChoiceGroupImpl extends XsdExplicitGroupImpl implements IXsdTypeDefParticle {
-    apply<T, TRet>(visitor: IXsdTypeDefParticleVisitor<T, TRet>, arg: T): TRet {
+export class XsdExplicitChoiceGroupImpl extends XsdExplicitGroupImpl implements IXsdTypeDefParticle, IXsdNestedParticle {
+    apply<T, TRet>(visitor: IXsdExplicitChoiceGroupImplVisitor<T, TRet>, arg: T): TRet {
         return visitor.visitChoiceGroup(this, arg);
     }
 }
 @XmlComplexType()
-export class XsdExplicitSequenceGroupImpl extends XsdExplicitGroupImpl implements IXsdTypeDefParticle {
-    apply<T, TRet>(visitor: IXsdTypeDefParticleVisitor<T, TRet>, arg: T): TRet {
+export class XsdExplicitSequenceGroupImpl extends XsdExplicitGroupImpl implements IXsdTypeDefParticle, IXsdNestedParticle {
+    apply<T, TRet>(visitor: IXsdExplicitSequenceGroupImplVisitor<T, TRet>, arg: T): TRet {
         return visitor.visitSequenceGroup(this, arg);
     }
+}
+export interface IXsdExplicitChoiceGroupImplVisitor<T, TRet> {
+    visitChoiceGroup(choiceGroup: XsdExplicitChoiceGroupImpl, arg: T): TRet;
+}
+export interface IXsdExplicitSequenceGroupImplVisitor<T, TRet> {
+    visitSequenceGroup(seqGroup: XsdExplicitSequenceGroupImpl, arg: T): TRet;
 }
 
 //   <xs:element name="all" id="all" type="xs:all">
@@ -1671,14 +1689,14 @@ export interface IXsdLocalType {
 //     </xs:complexContent>
 //   </xs:complexType>
 @XmlComplexType({name: 'localElement'})                                                                     // ok
-export class XsdLocalElement extends XsdElement {
+export class XsdLocalElement extends XsdElement implements IXsdNestedParticle {
     @XmlElement({order: 1, minOccurs: 0, type: {ctor: () => XsdAnnotation}})
     annotation: XsdAnnotation;
 
     @XmlChoice({order: 2, minOccurs: 0, maxOccurs: 1})
     @XmlElement({name: 'simpleType', type: {ctor: () => XsdLocalSimpleType}})
     @XmlElement({name: 'complexType', type: {ctor: () => XsdLocalComplexType}})
-    localType: IXsdLocalType;
+    localType?: IXsdLocalType;
 
     @XmlChoice({order: 3, minOccurs: 0, maxOccurs: 'unbounded'})
     @XmlElement({name: 'unique', type: {ctor: () => XsdUniqueKey}})
@@ -1689,7 +1707,7 @@ export class XsdLocalElement extends XsdElement {
     @XmlAttributesGroupEntry({ ctor: () => XsdDefRefAttrGroup })
     defRef: XsdDefRefAttrGroup;
     @XmlAttribute({name: 'type'})
-    typeName: string;
+    typeName?: string;
     @XmlAttributesGroupEntry({ ctor: () => XsdOccursAttrGroup })
     occurs: XsdOccursAttrGroup;
     @XmlAttribute()
@@ -1702,6 +1720,10 @@ export class XsdLocalElement extends XsdElement {
     block: string;
     @XmlAttribute()
     form: XsdFormChoice;
+
+    apply<T, TRet>(visitor: IXsdNestedParticleVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitLocalElement(this, arg);
+    }
 }
 
 //   <xs:complexType name="narrowMaxMin">
