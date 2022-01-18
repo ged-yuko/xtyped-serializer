@@ -272,7 +272,7 @@ export abstract class TsTypeRef extends TsSourceItem  {
 
     public static makeBuiltin(kind: TsBuiltinTypeKind): TsBuiltinTypeRef { return new TsBuiltinTypeRef(kind); }
     public static makeArray(elementType: TsTypeRef): TsArrayTypeRef { return new TsArrayTypeRef(elementType); }
-    public static makeCustom(name: string, genericArgs?: TsTypeRef[]): TsCustomTypeRef { return new TsCustomTypeRef(name, genericArgs); }
+    public static makeCustom(name: string, genericArgs?: ReadonlyArray<TsTypeRef>): TsCustomTypeRef { return new TsCustomTypeRef(name, genericArgs); }
 
     public apply<T, TRet>(visitor: ITsTypeRefVisitor<T, TRet>, arg: T): TRet { return this.applyImpl(visitor, arg); }
     protected abstract applyImpl<T, TRet>(visitor: ITsTypeRefVisitor<T, TRet>, arg: T): TRet;
@@ -298,7 +298,7 @@ export class TsArrayTypeRef extends TsTypeRef {
 export class TsCustomTypeRef extends TsTypeRef {
     public constructor(
         public readonly name: string,
-        public readonly genericArgs?: TsTypeRef[]
+        public readonly genericArgs?: ReadonlyArray<TsTypeRef>
     ) {
         super();
     }
@@ -322,18 +322,44 @@ export class TsGenericParameterDef extends TsNamedMember {
         this._baseTypes = basedTypes ?? [];
     }
 
+    public get reference(): TsTypeRef { return TsTypeRef.makeCustom(this.name); }
+
     public get baseTypes(): ReadonlyArray<TsTypeRef> { return this._baseTypes; }
+
+    public static makeSetOf(genericParams: (TsGenericParameterDef|string)[]): TsGenericParameterDef[] {
+        return genericParams.map(p => p instanceof TsGenericParameterDef ? p : new TsGenericParameterDef(p));
+    }
+}
+
+export class TsMethodParameter extends TsNamedMember {
+    private readonly _paramType: TsTypeRef;
+
+    public constructor(name: string, paramType: TsTypeRef) {
+        super(name);
+        this._paramType = paramType;
+    }
+
+    public get paramType() : TsTypeRef { return this._paramType; }
 }
 
 export class TsMethodSignature {
     public constructor(
-        public readonly paramTypes?: TsTypeRef[],
+        public readonly genericParams: ReadonlyArray<TsGenericParameterDef>,
+        public readonly parameters: ReadonlyArray<TsMethodParameter>,
         public readonly returnType?: TsTypeRef
     ) {
     }
 
-    public static nothingToUnpsecified() {
-        return new TsMethodSignature();
+    public static nothingToUnpsecified() : TsMethodSignature {
+        return new TsMethodSignature([], [], TsTypeRef.makeBuiltin(TsBuiltinTypeKind.Void));
+    }
+
+    public static of(genericParams?: (TsGenericParameterDef|string)[], parameters?: (TsMethodParameter|[name: string, paramType: TsTypeRef])[], retType?: TsTypeRef): TsMethodSignature {
+        return new TsMethodSignature(
+            genericParams ? TsGenericParameterDef.makeSetOf(genericParams) : [], 
+            (parameters ?? []).map(p => p instanceof TsMethodParameter ? p : new TsMethodParameter(p[0], p[1])), 
+            retType
+        );
     }
 }
 
@@ -368,7 +394,7 @@ export abstract class TsCustomTypeDef<M extends ITsNamedMember> extends TsNamedO
         this._genericParams = genericParams ?? [];
     }
 
-    public get genericParam(): ReadonlyArray<TsGenericParameterDef> { return this._genericParams; }
+    public get genericParams(): ReadonlyArray<TsGenericParameterDef> { return this._genericParams; }
 
     public makeRef(args?: TsTypeRef[]): TsTypeRef {
         if ((args?.length ?? 0) === this._genericParams.length) {
@@ -423,13 +449,21 @@ export class TsMethodDecl extends TsNamedMember {
 export class TsInterfaceDef extends TsCustomTypeDef<TsMethodDecl> implements ITsSourceUnitMember {
     public readonly baseInterfaces: Array<TsTypeRef>;
     
-    public constructor(name: string, baseIfaces?: Array<TsTypeRef>) {
-        super(name);
+    public constructor(name: string, genericParams?: Array<TsGenericParameterDef>, baseIfaces?: Array<TsTypeRef>) {
+        super(name, genericParams);
         this.baseInterfaces = baseIfaces ?? new Array<TsTypeRef>();
     }
 
     public createMethod(name: string, signature: TsMethodSignature): TsMethodDecl { 
         return this.register(new TsMethodDecl(name, signature));
+    }
+
+    public createMethodOf(name: string, parameters: (TsMethodParameter|[string, TsTypeRef])[], retType?: TsTypeRef): TsMethodDecl {
+        return this.createMethod(name, TsMethodSignature.of([], parameters, retType));
+    }
+
+    public createGenericMethodOf(name: string, genericParams: (TsGenericParameterDef|string)[], parameters: (TsMethodParameter|[string, TsTypeRef])[], retType?: TsTypeRef): TsMethodDecl {
+        return this.createMethod(name, TsMethodSignature.of(genericParams, parameters, retType));
     }
 
     apply<T, TRet>(visitor: ITsSourceUnitMemberVisitor<T, TRet>, arg: T): TRet {
@@ -451,7 +485,7 @@ export class TsFieldDef extends TsClassMember implements ITsClassMember {
     }
 }
 
-export class TsMethodDef extends TsClassMember implements ITsClassMember { // split into method def and method decl
+export class TsMethodDef extends TsClassMember implements ITsClassMember {
     public constructor(
         name: string,
         public readonly signature: TsMethodSignature
@@ -469,14 +503,22 @@ export class TsClassDef extends TsCustomTypeDef<TsClassMember> implements ITsSou
     public readonly baseType: TsCustomTypeRef|undefined;
     public readonly interfaces: Array<TsTypeRef>;
 
-    public constructor(name: string, baseType?: TsCustomTypeRef, ifaces?: Array<TsTypeRef>) {
-        super(name);
+    public constructor(name: string, genericParams?: Array<TsGenericParameterDef>, baseType?: TsCustomTypeRef, ifaces?: Array<TsTypeRef>) {
+        super(name, genericParams);
         this.baseType = baseType;
         this.interfaces = ifaces ?? new Array<TsTypeRef>();
     }
 
     public createMethod(name: string, signature: TsMethodSignature): TsMethodDef { 
         return this.register(new TsMethodDef(name, signature));
+    }
+
+    public createMethodOf(name: string, parameters: (TsMethodParameter|[string, TsTypeRef])[], retType?: TsTypeRef): TsMethodDef {
+        return this.createMethod(name, TsMethodSignature.of([], parameters, retType));
+    }
+
+    public createGenericMethodOf(name: string, genericParams: (TsGenericParameterDef|string)[], parameters: (TsMethodParameter|[string, TsTypeRef])[], retType?: TsTypeRef): TsMethodDecl {
+        return this.createMethod(name, TsMethodSignature.of(genericParams, parameters, retType));
     }
 
     public createField(name: string, fieldType?: TsTypeRef, isOptional?: boolean): TsFieldDef { 
@@ -522,11 +564,19 @@ export class TsSourceUnit extends TsNamedOrderedCollection<ITsSourceUnitMember> 
     }
 
     public createClass(name: string, baseClass?: TsCustomTypeRef, ... ifaces: TsTypeRef[]): TsClassDef {
-        return this.register(new TsClassDef(name, baseClass, ifaces)); 
+        return this.register(new TsClassDef(name, [], baseClass, ifaces)); 
+    }
+
+    public createGenericClass(name: string, genericParams: (TsGenericParameterDef|string)[], baseClass?: TsCustomTypeRef, ... ifaces: TsTypeRef[]): TsClassDef {
+        return this.register(new TsClassDef(name, TsGenericParameterDef.makeSetOf(genericParams), baseClass, ifaces)); 
     }
 
     public createInterface(name: string, ... ifaces: TsTypeRef[]): TsInterfaceDef {
-        return this.register(new TsInterfaceDef(name, ifaces)); 
+        return this.register(new TsInterfaceDef(name, [], ifaces)); 
+    }
+
+    public createGenericInterface(name: string, genericParams: (TsGenericParameterDef|string)[], ... ifaces: TsTypeRef[]): TsInterfaceDef {
+        return this.register(new TsInterfaceDef(name, TsGenericParameterDef.makeSetOf(genericParams), ifaces)); 
     }
 
     public createEnum(name: string, members?: { name: string, value?: any }[]): TsEnumDef {

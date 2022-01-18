@@ -29,7 +29,7 @@ export function makeInstanceOf<T>(ctor: CtorOf<T>, data: Required<T>) : T {
     return Object.assign(new ctor(), data);
 };
 
-export function foreachSeparating<T>(arr: T[], f: (x: T) => void, s: () => void): void{
+export function foreachSeparating<T>(arr: Array<T>|ReadonlyArray<T>, f: (x: T) => void, s: () => void): void{
     if (arr.length > 0) {
         f(arr[0]);
         for (let i = 1; i < arr.length; i++) {

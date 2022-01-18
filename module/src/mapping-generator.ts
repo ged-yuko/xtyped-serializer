@@ -1,11 +1,11 @@
-import { IXsdAttrsDeclsVisitor, IXsdComplexContentVisitor, IXsdComplexTypeModelVisitor, IXsdLocalType, IXsdNamedGroupParticle, IXsdNamedGroupParticleVisitor, IXsdNestedParticle, IXsdNestedParticleVisitor, IXsdSchemaDeclarationVisitor, IXsdSchemaDefinition, IXsdSchemaDefinitionVisitor, IXsdTopLevelElementLocalType, IXsdTypeDefParticle, IXsdTypeDefParticleVisitor, XsdAllImpl, XsdAnnotation, XsdAny, XsdAttrDecls, XsdAttributeGroupRef, XsdAttributeImpl, XsdAttributeUse, XsdComplexContent, XsdComplexRestrictionType, XsdComplexType, XsdExplicitChoiceGroupImpl, XsdExplicitSequenceGroupImpl, XsdExtensionTypeImpl, XsdFormChoice, XsdGroupRef, XsdImplicitComplexTypeModel, XsdImport, XsdInclude, XsdLocalComplexType, XsdLocalElement, XsdNamedAllParticleGroup, XsdNamedAttributeGroup, XsdNamedGroup, XsdNotation, XsdOccursAttrGroup, XsdRedefine, XsdSchema, XsdSimpleContent, XsdSimpleExplicitChoiceGroup, XsdSimpleExplicitSequenceGroup, XsdTopLevelAttribute, XsdTopLevelComplexType, XsdTopLevelElement, XsdTopLevelSimpleType } from './xsdschema2'
+import { IXsdAttrsDeclsVisitor, IXsdComplexContentVisitor, IXsdComplexTypeModelVisitor, IXsdLocalType, IXsdNamedGroupParticle, IXsdNamedGroupParticleVisitor, IXsdNestedParticle, IXsdNestedParticleVisitor, IXsdSchemaDeclarationVisitor, IXsdSchemaDefinition, IXsdSchemaDefinitionVisitor, IXsdTopLevelElementLocalType, IXsdTypeDefParticle, IXsdTypeDefParticleVisitor, XsdAllImpl, XsdAnnotation, XsdAny, XsdAttrDecls, XsdAttributeGroup, XsdAttributeGroupRef, XsdAttributeImpl, XsdAttributeUse, XsdComplexContent, XsdComplexRestrictionType, XsdComplexType, XsdExplicitChoiceGroupImpl, XsdExplicitSequenceGroupImpl, XsdExtensionTypeImpl, XsdFormChoice, XsdGroupRef, XsdImplicitComplexTypeModel, XsdImport, XsdInclude, XsdLocalComplexType, XsdLocalElement, XsdNamedAllParticleGroup, XsdNamedAttributeGroup, XsdNamedGroup, XsdNotation, XsdOccursAttrGroup, XsdRedefine, XsdSchema, XsdSimpleContent, XsdSimpleExplicitChoiceGroup, XsdSimpleExplicitSequenceGroup, XsdTopLevelAttribute, XsdTopLevelComplexType, XsdTopLevelElement, XsdTopLevelSimpleType } from './xsdschema2'
 import xs from './serializer'
-import { ITsClassMemberVisitor, ITsExprVisitor, ITsSourceUnitMemberVisitor, ITsTypeRefVisitor, TsAnnotationsCollection, TsArrayLiteralExpr, TsArrayTypeRef, TsBooleanExpr, TsBuiltinTypeKind, TsBuiltinTypeRef, TsClassDef, TsCtorRefExpr, TsCustomTypeRef, TsEnumDef, TsExpr, TsFieldDef, TsLambdaExpr as TsLambdaExpr, TsInterfaceDef, TsMethodDef, TsMethodSignature, TsNullExpr, TsNumberExpr, TsObjLiteralExpr, TsSourceUnit, TsStringExpr, TsTypeRef, TsUndefinedExpr } from './ts-dom'
+import { ITsClassMemberVisitor, ITsExprVisitor, ITsSourceUnitMemberVisitor, ITsTypeRefVisitor, TsAnnotationsCollection, TsArrayLiteralExpr, TsArrayTypeRef, TsBooleanExpr, TsBuiltinTypeKind, TsBuiltinTypeRef, TsClassDef, TsCtorRefExpr, TsCustomTypeRef, TsEnumDef, TsExpr, TsFieldDef, TsLambdaExpr as TsLambdaExpr, TsInterfaceDef, TsMethodDef, TsMethodSignature, TsNullExpr, TsNumberExpr, TsObjLiteralExpr, TsSourceUnit, TsStringExpr, TsTypeRef, TsUndefinedExpr, TsGenericParameterDef } from './ts-dom'
 import * as ts from 'typescript'
 import * as fs from 'fs'
 import { foreachSeparating, IndentedStringBuilder, LinkedQueue } from './utils'
 import { XmlDataModel, XmlElementChoiceGroupModel } from './content-model'
-import { XmlComplexType, XmlElementsGroup, XmlAttributesGroup, XmlAttribute, XmlAttributesGroupEntry, IXmlAttributeParameters, XmlElementsGroupEntry, XmlElement } from './annotations'
+import { XmlComplexType, XmlElementsGroup, XmlAttributesGroup, XmlAttribute, XmlAttributesGroupEntry, IXmlAttributeParameters, XmlElementsGroupEntry, XmlElement, XmlRoot } from './annotations'
 
 class TscSourceTextBuilder implements ITsSourceUnitMemberVisitor<undefined, ts.Node> {
                                     // ITsClassMemberVisitor<undefined, void>,
@@ -69,10 +69,25 @@ class TsSourceTextBuilder implements ITsSourceUnitMemberVisitor<IndentedStringBu
         }
     }
 
+    private formatGenericParams(genericParams: ReadonlyArray<TsGenericParameterDef>|undefined, sb: IndentedStringBuilder): void {
+        if (genericParams && genericParams.length > 0) {
+            sb.append('<');
+            foreachSeparating(genericParams, p => { 
+                sb.append(p.name);
+                if (p.baseTypes) {
+                    sb.append(' extends ');
+                    foreachSeparating(p.baseTypes, r => r.apply(this, sb), () => sb.append(', '));
+                }
+            }, () => sb.append(', '));
+            sb.append('>');
+        }
+    }
+
     private formatMethodHead(name: string, signature: TsMethodSignature, sb: IndentedStringBuilder): void {
         sb.append(name).append('(')
-        if (signature.paramTypes) {
-            foreachSeparating(signature.paramTypes, p => p.apply(this, sb), () => sb.append(', '));
+        this.formatGenericParams(signature.genericParams, sb);
+        if (signature.parameters) {
+            foreachSeparating(signature.parameters, p => { sb.append(p.name).append(': '); p.paramType.apply(this, sb); }, () => sb.append(', '));
         }
         sb.append(')');
         if (signature.returnType) {
@@ -101,7 +116,9 @@ class TsSourceTextBuilder implements ITsSourceUnitMemberVisitor<IndentedStringBu
     }
     
     visitInterfaceDef(ifaceDef: TsInterfaceDef, sb: IndentedStringBuilder): void {
-        sb.appendLine(`export interface ${ifaceDef.name} {`).push();
+        sb.append('export interface ').append(ifaceDef.name);
+        this.formatGenericParams(ifaceDef.genericParams, sb);
+        sb.appendLine(' {').push();
         for (const m of ifaceDef.members) {
             this.formatMethodHead(m.name, m.signature, sb);
             sb.appendLine(';');
@@ -110,7 +127,9 @@ class TsSourceTextBuilder implements ITsSourceUnitMemberVisitor<IndentedStringBu
     }
     visitClassDef(classDef: TsClassDef, sb: IndentedStringBuilder): void {
         this.formatAnnotations(classDef.annotations, sb);
-        sb.appendLine(`export class ${classDef.name} {`).push();
+        sb.append('export class ').append(classDef.name);
+        this.formatGenericParams(classDef.genericParams, sb);
+        sb.appendLine(' {').push();
         for (const m of classDef.members) {
             if (m.access) {
                 sb.append(m.access).append(' ');
@@ -247,7 +266,25 @@ class ChoiceGroupIfaceModel extends DefinitionTypesModel implements IGroupModel 
     }
 
     protected override implementDefinitionsImpl(unit: TsSourceUnit) : void {
-        // TODO walk through this.definition.particles, implement choice type interface and visitor interface
+        // TODO watch for implementing types
+
+        const argType = TsTypeRef.makeCustom('T');
+        const retType = TsTypeRef.makeCustom('TRet');
+        const genParams = [argType.name, retType.name];
+
+        const vifaceDef = unit.createGenericInterface(this.name + 'Visitor', genParams);
+        for (const c of this._alternatives) {
+            vifaceDef.createMethodOf(`visit${c.name}`, [
+                ['obj', TsTypeRef.makeCustom(c.name)],
+                ['arg', argType]
+            ], retType);
+        }
+
+        const ifaceDef = unit.createInterface(this.name);
+        ifaceDef.createGenericMethodOf('apply', genParams, [
+            ['visitor', TsTypeRef.makeCustom(vifaceDef.name, [argType, retType])],
+            ['arg', argType]
+        ], retType);
     }
 }
 
@@ -398,12 +435,128 @@ abstract class ClassModel extends DefinitionTypesModel {
     }
 
     protected registerField(fieldModel: ClassFieldModel) : ClassFieldModel {
+        console.log(`registering field '${fieldModel.name}' for type '${this.name}' of '${fieldModel.constructor.name}' kind`);
         if (this._fields.get(fieldModel.name)) {
-            throw new Error(`Field ${fieldModel.name} already registered`);
+            throw new Error(`Field '${fieldModel.name}' already registered in type '${this.name}'`);
         } else {
             this._fields.set(fieldModel.name, fieldModel);
         }
         return fieldModel;
+    }
+    
+    protected dispatchAttributeDefinitions(attrDecls: XsdAttrDecls) : FixupOperations {
+        return attrDecls.decls.flatMap(attrPart => attrPart.apply(new class implements IXsdAttrsDeclsVisitor<ClassModel, FixupOperations> {
+            visitXsdAttribute(attr: XsdAttributeImpl, me: ClassModel): FixupOperations {
+                if (attr.defRef.ref) {
+                    const topLevelAttr = me.context.attributes.get(attr.defRef.ref);
+                    if (topLevelAttr) {
+                        me.registerField(new ClassAttributeFieldModel(topLevelAttr.name, attr, topLevelAttr));
+                    } else {
+                        console.error('missing top level attr reference');
+                    }
+                } else if (attr.defRef.name) {
+                    me.registerField(new ClassAttributeFieldModel(attr.defRef.name, attr));
+                } else {
+                    console.error('invalid attr def');
+                }
+                return [];
+            }
+            visitXsdAttributeGroupRef(groupRef: XsdAttributeGroupRef, me: ClassModel): FixupOperations {
+                const topLevelGroup = me.context.attributeGroups.get(groupRef.ref);
+                if (topLevelGroup) {
+                    me.registerField(new ClassAttributeGroupFieldModel(groupRef.ref, groupRef, topLevelGroup));
+                } else {
+                    console.error('missing top level group reference ' + groupRef.ref);
+                }
+                return [];
+            }
+        }, this));
+    }
+
+    protected dispatchExplicitNestedMembers(part: IXsdNestedParticle) : FixupOperations {
+        return part.apply(new class implements IXsdNestedParticleVisitor<ClassModel, FixupOperations> {
+            visitLocalElement(localElement: XsdLocalElement, me: ClassModel): FixupOperations {
+                if (localElement.defRef.ref) {
+                    const topLevelElement = me.context.elements.get(localElement.defRef.ref);
+                    if (topLevelElement) {
+                        const elementModel = me.context.obtainElementTypeModel(me.name, topLevelElement.typeName ?? topLevelElement.name, topLevelElement.localType);
+                        me.registerField(new ClassLocalElementFieldModel(localElement.defRef.ref, localElement, topLevelElement, elementModel));
+                        return elementModel.getDelayedOperations();
+                    } else {
+                        console.error('missing top level element def ' + localElement.defRef.ref);
+                        return [];
+                    }
+                } else if (localElement.defRef.name) {
+                    const elementModel = me.context.obtainElementTypeModel(me.name, localElement.typeName ?? localElement.defRef.name, localElement.localType);
+                    me.registerField(new ClassLocalElementFieldModel(localElement.defRef.name, localElement, undefined, elementModel));
+                    return elementModel.getDelayedOperations();
+                } else {
+                    console.error('invalid element def');
+                    return [];
+                }
+            }
+            visitAnyElement(anyElement: XsdAny, me: ClassModel): FixupOperations {
+                throw new Error('nested any element part not implemented.')
+            }
+            visitGroupRef(groupRef: XsdGroupRef, me: ClassModel): FixupOperations {
+                const topLevelGroup = me.context.groups.get(groupRef.ref);
+                if (topLevelGroup) {
+                    me.registerField(new ClassElementsGroupFieldModel(groupRef.ref, groupRef, topLevelGroup));
+                } else {
+                    console.error('missing top level grop def ' + groupRef.ref);
+                }
+                return [];
+            }
+            visitChoiceGroup(choiceGroup: XsdExplicitChoiceGroupImpl, me: ClassModel): FixupOperations {
+                const num =  me._fields.size;
+                const choiceModel = me.context.createChoiceGroup(me.name + 'Choice' + num, choiceGroup);
+                me.registerField(new ClassElementsChoiceFieldModel('choice' + num, choiceGroup, choiceModel));
+                return choiceModel.getDelayedOperations();
+            }
+            visitSequenceGroup(seqGroup: XsdExplicitSequenceGroupImpl, me: ClassModel): FixupOperations {
+                if (seqGroup.occurs.max ?? 1 > 1) {
+                    const num =  me._fields.size;
+                    const groupModel = me.context.createSequenceGroup(me.name + 'ContentGroup' + num, seqGroup);
+                    me.registerField(new ClassElementsGroupFieldModel('contentGroup' + num, seqGroup, groupModel));
+                    return groupModel.getDelayedOperations();
+                } else {
+                    return seqGroup.particles.flatMap(p => me.dispatchExplicitNestedMembers(p));
+                }
+            }
+        }, this);
+    }
+
+    protected override implementDefinitionsImpl(unit: TsSourceUnit) : void {
+        const baseClassRef = this._baseTypeModel ? TsTypeRef.makeCustom(this._baseTypeModel.name) : undefined;
+        const ifaceRefs = this._choiceIfaces.map(i => TsTypeRef.makeCustom(i.name));
+
+        const classDef = unit.createClass(this.name, baseClassRef, ... ifaceRefs);
+        this._fields.forEach((fmodel) => fmodel.implement(classDef));
+
+        // this.definition.mixed
+        // TODO implement visitor application method if needed
+
+        this.implementDefinitionAnnotations(classDef);
+    }
+
+    protected abstract implementDefinitionAnnotations(classDef: TsClassDef) : void;
+}
+
+class AttributeGroupClassModel extends ClassModel implements IGroupModel {
+    public constructor(
+        context: NamespaceModel,
+        name: string,
+        private readonly definition: XsdNamedAttributeGroup
+    ) {
+        super(context, name, false);
+    }
+
+    protected override getDelayedOperationsImpl() : FixupOperations { 
+        return this.dispatchAttributeDefinitions(this.definition.attrDecls);
+    } 
+
+    protected override implementDefinitionAnnotations(classDef: TsClassDef) : void {
+        classDef.annotations.addByType(XmlAttributesGroup);
     }
 }
 
@@ -418,15 +571,11 @@ class SeqGroupClassModel extends ClassModel implements IGroupModel {
     }
 
     protected override getDelayedOperationsImpl() : FixupOperations { 
-        // TODO expand implicit subgroups
-        return []; 
+        return this.definition.particles.flatMap(p => this.dispatchExplicitNestedMembers(p));
     } 
 
-    protected override implementDefinitionsImpl(unit: TsSourceUnit) : void{
-        const cd = unit.createClass(this.name);
-        cd.annotations.addByType(XmlElementsGroup);
-
-        // TODO walk through this.definition.particles, implement elements group class
+    protected override implementDefinitionAnnotations(classDef: TsClassDef) : void {
+        classDef.annotations.addByType(XmlElementsGroup);
     }
 }
 
@@ -437,6 +586,8 @@ enum InheritanceMode {
 }
 
 class ComplexTypeClassModel extends ClassModel {
+    private readonly _rootElementDefs = new Array<XsdTopLevelElement>();
+
     public constructor(
         context: NamespaceModel,
         name: string,
@@ -448,6 +599,10 @@ class ComplexTypeClassModel extends ClassModel {
         super(context, name, abstract);
     }
 
+    public registerRootElement(el: XsdTopLevelElement) {
+        this._rootElementDefs.push(el);
+    }
+    
     protected override getDelayedOperationsImpl() : FixupOperations {
         return this.dispatchDefinitionModel();
     }
@@ -472,43 +627,20 @@ class ComplexTypeClassModel extends ClassModel {
                 return [];
             }
             visitImplicitComplexTypeModel(icmodel: XsdImplicitComplexTypeModel, me: ComplexTypeClassModel): FixupOperations {
-                return [];
+                return me.dispatchExplicitMembers(undefined, InheritanceMode.None, [icmodel.particles], icmodel.attrDecls);
             }
         }, this);
     }
 
-    private dispatchExplicitMembers(baseComplexTypeName: string, inheritanceMode: InheritanceMode, particles: IXsdTypeDefParticle[], attrDecls: XsdAttrDecls) : FixupOperations {
-        this._baseTypeModel = this.context.complexTypes.get(baseComplexTypeName);
-        this._inheritanceMode = inheritanceMode;
+    private dispatchExplicitMembers(baseComplexTypeName: string|undefined, inheritanceMode: InheritanceMode, particles: IXsdTypeDefParticle[], attrDecls: XsdAttrDecls) : FixupOperations {
+        if (baseComplexTypeName) {
+            this._baseTypeModel = this.context.complexTypes.get(baseComplexTypeName);
+            this._inheritanceMode = inheritanceMode;
+        }
         
         return [ 
             // TODO extract it to superclass, consider attribute group model
-            attrDecls.decls.flatMap(attrPart => attrPart.apply(new class implements IXsdAttrsDeclsVisitor<ComplexTypeClassModel, FixupOperations> {
-                visitXsdAttribute(attr: XsdAttributeImpl, me: ComplexTypeClassModel): FixupOperations {
-                    if (attr.defRef.ref) {
-                        const topLevelAttr = me.context.attributes.get(attr.defRef.ref);
-                        if (topLevelAttr) {
-                            me.registerField(new ClassAttributeFieldModel(topLevelAttr.name, attr, topLevelAttr));
-                        } else {
-                            console.error('missing top level attr reference');
-                        }
-                    } else if (attr.defRef.name) {
-                        me.registerField(new ClassAttributeFieldModel(attr.defRef.name, attr));
-                    } else {
-                        console.error('invalid attr def');
-                    }
-                    return [];
-                }
-                visitXsdAttributeGroupRef(groupRef: XsdAttributeGroupRef, me: ComplexTypeClassModel): FixupOperations {
-                    const topLevelGroup = me.context.groups.get(groupRef.ref);
-                    if (topLevelGroup) {
-                        me.registerField(new ClassAttributeGroupFieldModel(groupRef.ref, groupRef, topLevelGroup));
-                    } else {
-                        console.error('missing top level group reference');
-                    }
-                    return [];
-                }
-            }, this)),
+            this.dispatchAttributeDefinitions(attrDecls),
             // TODO extract it to superclass, consider elements group
             particles.flatMap(part => part.apply(new class implements IXsdTypeDefParticleVisitor<ComplexTypeClassModel, FixupOperations> {
                 visitSequenceGroup(seqGroup: XsdExplicitSequenceGroupImpl, me: ComplexTypeClassModel): FixupOperations {
@@ -528,98 +660,12 @@ class ComplexTypeClassModel extends ClassModel {
         ].flat();
     }
 
-    private dispatchExplicitNestedMembers(part: IXsdNestedParticle) : FixupOperations {
-        // TODO move it to superclass
-        return part.apply(new class implements IXsdNestedParticleVisitor<ComplexTypeClassModel, FixupOperations> {
-            visitLocalElement(localElement: XsdLocalElement, me: ComplexTypeClassModel): FixupOperations {
-                if (localElement.defRef.ref) {
-                    const topLevelElement = me.context.elements.get(localElement.defRef.ref);
-                    if (topLevelElement) {
-                        const elementModel = me.obtainElementTypeModel(topLevelElement.typeName ?? topLevelElement.name, topLevelElement.localType);
-                        me.registerField(new ClassLocalElementFieldModel(localElement.defRef.ref, localElement, topLevelElement, elementModel));
-                        return elementModel.getDelayedOperations();
-                    } else {
-                        console.error('missing top level element def ' + localElement.defRef.ref);
-                        return [];
-                    }
-                } else if (localElement.defRef.name) {
-                    const elementModel = me.obtainElementTypeModel(localElement.typeName ?? localElement.defRef.name, localElement.localType);
-                    me.registerField(new ClassLocalElementFieldModel(localElement.defRef.name, localElement, undefined, elementModel));
-                    return elementModel.getDelayedOperations();
-                } else {
-                    console.error('invalid element def');
-                    return [];
-                }
-            }
-            visitAnyElement(anyElement: XsdAny, me: ComplexTypeClassModel): FixupOperations {
-                throw new Error('nested any element part not implemented.')
-            }
-            visitGroupRef(groupRef: XsdGroupRef, me: ComplexTypeClassModel): FixupOperations {
-                const topLevelGroup = me.context.groups.get(groupRef.ref);
-                if (topLevelGroup) {
-                    me.registerField(new ClassElementsGroupFieldModel(groupRef.ref, groupRef, topLevelGroup));
-                } else {
-                    console.error('missing top level grop def ' + groupRef.ref);
-                }
-                return [];
-            }
-            visitChoiceGroup(choiceGroup: XsdExplicitChoiceGroupImpl, me: ComplexTypeClassModel): FixupOperations {
-                const num =  me._fields.size;
-                const choiceModel = me.context.createChoiceGroup(me.name + 'Choice' + num, choiceGroup);
-                me.registerField(new ClassElementsChoiceFieldModel('choice' + num, choiceGroup, choiceModel));
-                return choiceModel.getDelayedOperations();
-            }
-            visitSequenceGroup(seqGroup: XsdExplicitSequenceGroupImpl, me: ComplexTypeClassModel): FixupOperations {
-                if (seqGroup.occurs.max ?? 1 > 1) {
-                    const num =  me._fields.size;
-                    const groupModel = me.context.createSequenceGroup(me.name + 'ContentGroup' + num, seqGroup);
-                    me.registerField(new ClassElementsGroupFieldModel('contentGroup' + num, seqGroup, groupModel));
-                    return groupModel.getDelayedOperations();
-                } else {
-                    return seqGroup.particles.flatMap(p => me.dispatchExplicitNestedMembers(p));
-                }
-            }
-        }, this);
-    }
+    protected override implementDefinitionAnnotations(classDef: TsClassDef) : void {
+        classDef.annotations.addByType(XmlComplexType);
 
-    private obtainElementTypeModel(complexTypeName: string, localType?: IXsdTopLevelElementLocalType|IXsdLocalType) : ComplexTypeClassModel {
-        if (localType) {
-            if (this.context.complexTypes.get(complexTypeName)) {
-                complexTypeName = this.name + '_' + complexTypeName;
-            }
-            if (this.context.complexTypes.get(complexTypeName)) {
-                console.warn('TODO: resolve generated type name conflicts');  // TODO: resolve generated type name conflicts'
-            }
-            
-            if (localType instanceof XsdLocalComplexType) {
-                const fakeComplexType = new XsdComplexType();
-                fakeComplexType.annotation = localType.annotation;
-                fakeComplexType.id = localType.id;
-                fakeComplexType.mixed = localType.mixed;
-                fakeComplexType.model = localType.model;
-                fakeComplexType.rawNode = localType.rawNode;
-
-                const model = this.context.createComplexType(complexTypeName, fakeComplexType, false, '', '');
-                return model;
-            } else {
-                throw new Error('unsupported local type kind'); // TODO fix local type visitor
-            }
-        } else {
-            const model = this.context.complexTypes.get(complexTypeName);
-            if (model) {
-                return model;
-            } else {
-                throw new Error('unknown top level complex type');
-            }
+        for (const el of this._rootElementDefs) {
+            classDef.annotations.addByType(XmlRoot, [{name: el.name, namespace: this.context.schema.targetNamespace}]);
         }
-    }
-
-    protected override implementDefinitionsImpl(unit: TsSourceUnit) : void {
-        const cd = unit.createClass(this.name, this._baseTypeModel ? TsTypeRef.makeCustom(this._baseTypeModel.name) : undefined);
-        cd.annotations.addByType(XmlComplexType);
-
-        // this.definition.mixed
-        // TODO walk through this.definition.model, implement element complex type members and visitor application method if needed
     }
 }
 
@@ -629,7 +675,7 @@ class NamespaceModel {
     public readonly elements = new Map<string, XsdTopLevelElement>();
     public readonly attributes = new Map<string, XsdTopLevelAttribute>();
     public readonly groups = new Map<string, IGroupModel>();
-    public readonly attributeGroups = new Map<string, XsdNamedAttributeGroup>();
+    public readonly attributeGroups = new Map<string, IGroupModel>();
     public readonly references = new Map<string, NamespaceModel>();
 
     public readonly allModels = new Array<DefinitionTypesModel>();
@@ -653,6 +699,38 @@ class NamespaceModel {
             return name;
         }
     }
+    
+    public obtainElementTypeModel(contextName: string|undefined, complexTypeName: string, localType?: IXsdTopLevelElementLocalType|IXsdLocalType) : ComplexTypeClassModel {
+        if (localType) {
+            if (this.complexTypes.get(complexTypeName)) {
+                complexTypeName = contextName + '_' + complexTypeName;
+            }
+            if (this.complexTypes.get(complexTypeName)) {
+                console.warn('TODO: resolve generated type name conflicts');  // TODO: resolve generated type name conflicts'
+            }
+            
+            if (localType instanceof XsdLocalComplexType) {
+                const fakeComplexType = new XsdComplexType();
+                fakeComplexType.annotation = localType.annotation;
+                fakeComplexType.id = localType.id;
+                fakeComplexType.mixed = localType.mixed;
+                fakeComplexType.model = localType.model;
+                fakeComplexType.rawNode = localType.rawNode;
+
+                const model = this.createComplexType(complexTypeName, fakeComplexType, false, '', '');
+                return model;
+            } else {
+                throw new Error('unsupported local type kind'); // TODO fix local type visitor
+            }
+        } else {
+            const model = this.complexTypes.get(complexTypeName);
+            if (model) {
+                return model;
+            } else {
+                throw new Error('unknown top level complex type ' + complexTypeName);
+            }
+        }
+    }
 
     public createComplexType(name: string, definition: XsdComplexType, abstract: boolean, final: string, block: string) : ComplexTypeClassModel {
         const model = new ComplexTypeClassModel(this, this.makeTypeName(name), definition, abstract, final, block);
@@ -671,6 +749,13 @@ class NamespaceModel {
     public createChoiceGroup(name: string, seq: XsdExplicitChoiceGroupImpl|XsdSimpleExplicitChoiceGroup) : ChoiceGroupIfaceModel {
         const model = new ChoiceGroupIfaceModel(this, this.makeTypeName(name), seq);
         this.groups.set(name, model);
+        this.allModels.push(model);
+        return model;
+    }
+
+    public createAttributeGroup(xnamedAttrsGroup: XsdNamedAttributeGroup) : AttributeGroupClassModel {
+        const model = new AttributeGroupClassModel(this, this.makeTypeName(xnamedAttrsGroup.name), xnamedAttrsGroup);
+        this.attributeGroups.set(xnamedAttrsGroup.name, model);
         this.allModels.push(model);
         return model;
     }
@@ -704,6 +789,7 @@ class SchemaDefinitionsCollector implements IXsdSchemaDeclarationVisitor<Namespa
 
     public importXsdText(outputFilePath: string, xsdSchemaText: string, xsdFilePath?: string, typeNamePrefix?: string) : NamespaceModel {
         const schema = xs.deserialize(xsdSchemaText, XsdSchema);
+        // console.log(JSON.stringify(schema, undefined, '  '));
         const info = new NamespaceModel(schema, outputFilePath, xsdFilePath, typeNamePrefix?.trim());
         this._nsByName.set(schema.targetNamespace, info);
         this._queue.enqueue(info);
@@ -741,6 +827,11 @@ class SchemaDefinitionsCollector implements IXsdSchemaDeclarationVisitor<Namespa
     private collectDefinitions(schema: XsdSchema, context: NamespaceModel): void {
         schema.declarations.forEach(d => d.apply(this, context));
         schema.definitions.forEach(d => d.apply(this, context));
+
+        context.elements.forEach(el => {
+            const typeModel = context.obtainElementTypeModel(undefined, el.typeName, el.localType);
+            typeModel.registerRootElement(el);
+        });
     }
 
     visitXsdAnnotation(xannotation: XsdAnnotation, context: NamespaceModel): void {
@@ -795,7 +886,7 @@ class SchemaDefinitionsCollector implements IXsdSchemaDeclarationVisitor<Namespa
         }, undefined);
     }
     visitXsdNamedAttributeGroup(xnamedAttrsGroup: XsdNamedAttributeGroup, context: NamespaceModel): void {
-        context.attributeGroups.set(xnamedAttrsGroup.name, xnamedAttrsGroup);
+        context.createAttributeGroup(xnamedAttrsGroup);
     }
 }
 
