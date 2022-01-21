@@ -351,7 +351,7 @@ export class TsMethodSignature {
     }
 
     public static nothingToUnpsecified() : TsMethodSignature {
-        return new TsMethodSignature([], [], TsTypeRef.makeBuiltin(TsBuiltinTypeKind.Void));
+        return new TsMethodSignature([], [], undefined);
     }
 
     public static of(genericParams?: (TsGenericParameterDef|string)[], parameters?: (TsMethodParameter|[name: string, paramType: TsTypeRef])[], retType?: TsTypeRef): TsMethodSignature {

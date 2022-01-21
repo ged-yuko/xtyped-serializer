@@ -1356,7 +1356,7 @@ export class XsdComplexRestrictionType extends XsdRestrictionType implements IXs
     @XmlElement({name: 'all', type: {ctor: () => XsdAllImpl}})
     @XmlElement({name: 'choice', type: {ctor: () => XsdExplicitChoiceGroupImpl}})
     @XmlElement({name: 'sequence', type: {ctor: () => XsdExplicitSequenceGroupImpl}})
-    particles = new Array<IXsdTypeDefParticle>();
+    particle?: IXsdTypeDefParticle;
     @XmlElementsGroupEntry({order: 3, ctor: () => XsdAttrDecls})
     attrDecls: XsdAttrDecls;
     @XmlAttribute()
@@ -1391,7 +1391,7 @@ export class XsdExtensionTypeImpl extends XsdExtensionType implements IXsdComple
     @XmlElement({name: 'all', type: {ctor: () => XsdAllImpl}})
     @XmlElement({name: 'choice', type: {ctor: () => XsdExplicitChoiceGroupImpl}})
     @XmlElement({name: 'sequence', type: {ctor: () => XsdExplicitSequenceGroupImpl}})
-    particles = new Array<IXsdTypeDefParticle>();
+    particle?: IXsdTypeDefParticle;
     @XmlElementsGroupEntry({order: 3, ctor: () => XsdAttrDecls})
     attrDecls: XsdAttrDecls;
     @XmlAttribute()
@@ -1556,7 +1556,7 @@ export class XsdImplicitComplexTypeModel implements IXsdComplexTypeModel {
     @XmlElement({name: 'all', type: {ctor: () => XsdAllImpl}})
     @XmlElement({name: 'choice', type: {ctor: () => XsdExplicitChoiceGroupImpl}})
     @XmlElement({name: 'sequence', type: {ctor: () => XsdExplicitSequenceGroupImpl}})
-    particles: IXsdTypeDefParticle;
+    particle?: IXsdTypeDefParticle;
     @XmlElementsGroupEntry({order: 2, ctor: () => XsdAttrDecls})
     attrDecls: XsdAttrDecls;
 

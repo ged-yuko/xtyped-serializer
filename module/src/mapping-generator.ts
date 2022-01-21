@@ -1,4 +1,4 @@
-import { IXsdAttrsDeclsVisitor, IXsdComplexContentVisitor, IXsdComplexTypeModelVisitor, IXsdLocalType, IXsdNamedGroupParticle, IXsdNamedGroupParticleVisitor, IXsdNestedParticle, IXsdNestedParticleVisitor, IXsdSchemaDeclarationVisitor, IXsdSchemaDefinition, IXsdSchemaDefinitionVisitor, IXsdTopLevelElementLocalType, IXsdTypeDefParticle, IXsdTypeDefParticleVisitor, XsdAllImpl, XsdAnnotation, XsdAny, XsdAttrDecls, XsdAttributeGroup, XsdAttributeGroupRef, XsdAttributeImpl, XsdAttributeUse, XsdComplexContent, XsdComplexRestrictionType, XsdComplexType, XsdExplicitChoiceGroupImpl, XsdExplicitSequenceGroupImpl, XsdExtensionTypeImpl, XsdFormChoice, XsdGroupRef, XsdImplicitComplexTypeModel, XsdImport, XsdInclude, XsdLocalComplexType, XsdLocalElement, XsdNamedAllParticleGroup, XsdNamedAttributeGroup, XsdNamedGroup, XsdNotation, XsdOccursAttrGroup, XsdRedefine, XsdSchema, XsdSimpleContent, XsdSimpleExplicitChoiceGroup, XsdSimpleExplicitSequenceGroup, XsdTopLevelAttribute, XsdTopLevelComplexType, XsdTopLevelElement, XsdTopLevelSimpleType } from './xsdschema2'
+import { IXsdAttrsDeclsVisitor, IXsdComplexContentVisitor, IXsdComplexTypeModelVisitor, IXsdLocalType, IXsdNamedGroupParticle, IXsdNamedGroupParticleVisitor, IXsdNestedParticle, IXsdNestedParticleVisitor, IXsdSchemaDeclarationVisitor, IXsdSchemaDefinition, IXsdSchemaDefinitionVisitor, IXsdTopLevelElementLocalType, IXsdTypeDefParticle, IXsdTypeDefParticleVisitor, XsdAllImpl, XsdAnnotation, XsdAny, XsdAttrDecls, XsdAttributeGroup, XsdAttributeGroupRef, XsdAttributeImpl, XsdAttributeUse, XsdComplexContent, XsdComplexRestrictionType, XsdComplexType, XsdExplicitChoiceGroupImpl, XsdExplicitSequenceGroupImpl, XsdExtensionTypeImpl, XsdFormChoice, XsdGroupRef, XsdImplicitComplexTypeModel, XsdImport, XsdInclude, XsdLocalComplexType, XsdLocalElement, XsdNamedAllParticleGroup, XsdNamedAttributeGroup, XsdNamedGroup, XsdNotation, XsdOccursAttrGroup, XsdRedefine, XsdSchema, XsdSimpleContent, XsdSimpleExplicitChoiceGroup, XsdSimpleExplicitSequenceGroup, XsdTopLevelAttribute, XsdTopLevelComplexType, XsdTopLevelElement, XsdTopLevelSimpleType } from './xsdschema'
 import xs from './serializer'
 import { ITsClassMemberVisitor, ITsExprVisitor, ITsSourceUnitMemberVisitor, ITsTypeRefVisitor, TsAnnotationsCollection, TsArrayLiteralExpr, TsArrayTypeRef, TsBooleanExpr, TsBuiltinTypeKind, TsBuiltinTypeRef, TsClassDef, TsCtorRefExpr, TsCustomTypeRef, TsEnumDef, TsExpr, TsFieldDef, TsLambdaExpr as TsLambdaExpr, TsInterfaceDef, TsMethodDef, TsMethodSignature, TsNullExpr, TsNumberExpr, TsObjLiteralExpr, TsSourceUnit, TsStringExpr, TsTypeRef, TsUndefinedExpr, TsGenericParameterDef } from './ts-dom'
 import * as ts from 'typescript'
@@ -197,7 +197,7 @@ class TsSourceTextBuilder implements ITsSourceUnitMemberVisitor<IndentedStringBu
         sb.pop().append(' }');
     }
     visitStringExpr(str: TsStringExpr, sb: IndentedStringBuilder): void {
-        sb.append(str.value);
+        sb.append('"').append(str.value?.replace('"', '\\"') ?? '').append('"');  // TODO replaceAll?
     }
     visitBooleanExpr(bool: TsBooleanExpr, sb: IndentedStringBuilder): void {
         sb.append('' + bool.value);
@@ -236,6 +236,8 @@ interface IGroupModel {
 }
 
 abstract class DefinitionTypesModel {
+    private _delayedOperationsCollected = false;
+
     public constructor(
         public readonly context: NamespaceModel
     ) {
@@ -248,7 +250,12 @@ abstract class DefinitionTypesModel {
     protected abstract implementDefinitionsImpl(unit: TsSourceUnit) : void;
 
     public getDelayedOperations() : FixupOperations {
-        return this.getDelayedOperationsImpl();
+        if (this._delayedOperationsCollected) {
+            return [];
+        } else {
+            this._delayedOperationsCollected = true;
+            return this.getDelayedOperationsImpl();
+        }
     }
     
     protected getDelayedOperationsImpl() : FixupOperations { return []; } 
@@ -616,10 +623,10 @@ class ComplexTypeClassModel extends ClassModel {
 
                 return cmodel.content.apply(new class implements IXsdComplexContentVisitor<ComplexTypeClassModel, FixupOperations> {
                     visitComplexExtensionModel(ctext: XsdExtensionTypeImpl, me: ComplexTypeClassModel): FixupOperations {
-                        return me.dispatchExplicitMembers(ctext.base, InheritanceMode.Extension, ctext.particles, ctext.attrDecls);
+                        return me.dispatchExplicitMembers(ctext.base, InheritanceMode.Extension, ctext.particle, ctext.attrDecls);
                     }
                     visitComplexRestrictionModel(ctrst: XsdComplexRestrictionType, me: ComplexTypeClassModel): FixupOperations {
-                        return me.dispatchExplicitMembers(ctrst.base, InheritanceMode.Restriction, ctrst.particles, ctrst.attrDecls);
+                        return me.dispatchExplicitMembers(ctrst.base, InheritanceMode.Restriction, ctrst.particle, ctrst.attrDecls);
                     }
                 }, me);
             }
@@ -627,12 +634,12 @@ class ComplexTypeClassModel extends ClassModel {
                 return [];
             }
             visitImplicitComplexTypeModel(icmodel: XsdImplicitComplexTypeModel, me: ComplexTypeClassModel): FixupOperations {
-                return me.dispatchExplicitMembers(undefined, InheritanceMode.None, [icmodel.particles], icmodel.attrDecls);
+                return me.dispatchExplicitMembers(undefined, InheritanceMode.None, icmodel.particle, icmodel.attrDecls);
             }
         }, this);
     }
 
-    private dispatchExplicitMembers(baseComplexTypeName: string|undefined, inheritanceMode: InheritanceMode, particles: IXsdTypeDefParticle[], attrDecls: XsdAttrDecls) : FixupOperations {
+    private dispatchExplicitMembers(baseComplexTypeName: string|undefined, inheritanceMode: InheritanceMode, particle: IXsdTypeDefParticle|undefined, attrDecls: XsdAttrDecls) : FixupOperations {
         if (baseComplexTypeName) {
             this._baseTypeModel = this.context.complexTypes.get(baseComplexTypeName);
             this._inheritanceMode = inheritanceMode;
@@ -642,7 +649,7 @@ class ComplexTypeClassModel extends ClassModel {
             // TODO extract it to superclass, consider attribute group model
             this.dispatchAttributeDefinitions(attrDecls),
             // TODO extract it to superclass, consider elements group
-            particles.flatMap(part => part.apply(new class implements IXsdTypeDefParticleVisitor<ComplexTypeClassModel, FixupOperations> {
+            particle?.apply(new class implements IXsdTypeDefParticleVisitor<ComplexTypeClassModel, FixupOperations> {
                 visitSequenceGroup(seqGroup: XsdExplicitSequenceGroupImpl, me: ComplexTypeClassModel): FixupOperations {
                     return me.dispatchExplicitNestedMembers(seqGroup);
                 }
@@ -656,7 +663,7 @@ class ComplexTypeClassModel extends ClassModel {
                 visitGroupRef(groupRef: XsdGroupRef, me: ComplexTypeClassModel): FixupOperations {
                     return me.dispatchExplicitNestedMembers(groupRef);
                 }
-            }, this))
+            }, this) ?? []
         ].flat();
     }
 
@@ -700,8 +707,9 @@ class NamespaceModel {
         }
     }
     
-    public obtainElementTypeModel(contextName: string|undefined, complexTypeName: string, localType?: IXsdTopLevelElementLocalType|IXsdLocalType) : ComplexTypeClassModel {
+    public obtainElementTypeModel(contextName: string, complexTypeName: string, localType?: IXsdTopLevelElementLocalType|IXsdLocalType) : ComplexTypeClassModel {
         if (localType) {
+            complexTypeName = complexTypeName ?? (contextName + 'Content');
             if (this.complexTypes.get(complexTypeName)) {
                 complexTypeName = contextName + '_' + complexTypeName;
             }
@@ -829,7 +837,7 @@ class SchemaDefinitionsCollector implements IXsdSchemaDeclarationVisitor<Namespa
         schema.definitions.forEach(d => d.apply(this, context));
 
         context.elements.forEach(el => {
-            const typeModel = context.obtainElementTypeModel(undefined, el.typeName, el.localType);
+            const typeModel = context.obtainElementTypeModel(el.name, el.typeName, el.localType);
             typeModel.registerRootElement(el);
         });
     }
