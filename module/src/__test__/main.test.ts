@@ -81,11 +81,6 @@ function parseAnnotatedModelText(fname: string, text: string): XmlDataModel {
         ['m1', 'm2'].map(s => ts.factory.createMethodSignature(undefined, s, undefined, undefined, [ts.factory.createParameterDeclaration(undefined, undefined, undefined, 'x')], undefined))
     );
     
-    // TODO reimplement SourceTextBuilder with this approach
-    const resultFile = ts.createSourceFile("someFileName.ts", "", ts.ScriptTarget.Latest, /*setParentNodes*/ false, ts.ScriptKind.TS);
-    const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed });
-    const result = printer.printNode(ts.EmitHint.Unspecified, ifa, resultFile);
-    console.warn(result);
     
     throw new Error('not implemented');
 }

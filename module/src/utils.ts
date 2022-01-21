@@ -29,7 +29,7 @@ export function makeInstanceOf<T>(ctor: CtorOf<T>, data: Required<T>) : T {
     return Object.assign(new ctor(), data);
 };
 
-export function foreachSeparating<T>(arr: T[], f: (x: T) => void, s: () => void): void{
+export function foreachSeparating<T>(arr: Array<T>|ReadonlyArray<T>, f: (x: T) => void, s: () => void): void{
     if (arr.length > 0) {
         f(arr[0]);
         for (let i = 1; i < arr.length; i++) {
@@ -70,6 +70,10 @@ export function splitArrayByType<T, R, O = Exclude<T, R>>(arr: T[], Class: AnyCt
     }
 
     return result;
+}
+
+export function asInstanceOf<T>(Class: AnyCtorOf<T>) : (o: any) => T|undefined {
+    return (o): T|undefined => o instanceof Class ? o : undefined;
 }
 
 export function testInstanceOf<T>(Class: AnyCtorOf<T>) : (o: any) => o is T {

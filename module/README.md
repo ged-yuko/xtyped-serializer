@@ -5,7 +5,8 @@ XsdSchema-aware XML serializer for TypeScript
 ## Features/TODO
 
 **XsdSchema**
-- [ ] Choice dispatching/visitors
+- [x] Choice via elements or subgroups and occurences
+  - [ ] Generate dispatching visitors
 - [x] Multiple occurences/@XmlArray
 - [ ] All group
 - [x] Explicit sequence subgroups
@@ -36,6 +37,7 @@ XsdSchema-aware XML serializer for TypeScript
 - [ ] import
 
 **Package and functionality**
+- [ ] logging throughout the code 
 - [ ] builtin tests based on W3C XSD Schema
 - [ ] content model caching
 - [ ] package build process review (namespacing, components and such)
@@ -50,6 +52,4 @@ XsdSchema-aware XML serializer for TypeScript
 
 **Known issues**
 - [ ] namespace context should be preserved after attributes mapping during serialization
-- [ ] sometimes incorrect element context object during serialization (see following XsdSchema processing issues)
-    - [ ] excessive annotations
-    - [ ] see a number of definitions (complexType "anyType", element "appinfo", element "documentation")
+
