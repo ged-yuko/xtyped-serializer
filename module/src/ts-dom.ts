@@ -6,7 +6,8 @@ export class TsSourceItem {
 }
 
 export interface ITsExprVisitor<T, TRet> {
-    visitCtorRetExpr(ctor: TsCtorRefExpr, arg: T): TRet;
+    visitConstructorCallExpr(ctorCall: TsConstructorCallExpr, arg: T): TRet;
+    visitCtorRefExpr(ctor: TsCtorRefExpr, arg: T): TRet;
     visitLambdaExpr(func: TsLambdaExpr, arg: T): TRet;
     visitArrayExpr(arr: TsArrayLiteralExpr, arg: T): TRet;
     visitObjectExpr(obj: TsObjLiteralExpr, arg: T): TRet;
@@ -81,6 +82,23 @@ export abstract class TsExpr extends TsSourceItem {
 
     public static undefined() {
         return TsUndefinedExpr.Instance;
+    }
+
+    public static new(typeRef: TsTypeRef, ... args: TsExpr[]) {
+        return new TsConstructorCallExpr(typeRef, args);
+    }
+}
+
+export class TsConstructorCallExpr extends TsExpr {
+    public constructor(
+        public readonly typeRef: TsTypeRef,
+        public readonly args: TsExpr[]
+    ) {
+        super();
+    }
+
+    protected override applyImpl<T, TRet>(visitor: ITsExprVisitor<T, TRet>, arg: T): TRet {
+        return visitor.visitConstructorCallExpr(this, arg);
     }
 }
 
@@ -190,7 +208,7 @@ export class TsCtorRefExpr extends TsLiteralExpr {
     }
 
     protected override applyImpl<T, TRet>(visitor: ITsExprVisitor<T, TRet>, arg: T): TRet {
-        return visitor.visitCtorRetExpr(this, arg);
+        return visitor.visitCtorRefExpr(this, arg);
     }
 }
 
@@ -475,7 +493,8 @@ export class TsFieldDef extends TsClassMember implements ITsClassMember {
     public constructor(
         name: string,
         public readonly fieldType?: TsTypeRef,
-        public readonly isOptional?: boolean
+        public readonly isOptional?: boolean,
+        public readonly initExpr?: TsExpr
     ) {
         super(name);
     }
@@ -521,8 +540,8 @@ export class TsClassDef extends TsCustomTypeDef<TsClassMember> implements ITsSou
         return this.createMethod(name, TsMethodSignature.of(genericParams, parameters, retType));
     }
 
-    public createField(name: string, fieldType?: TsTypeRef, isOptional?: boolean): TsFieldDef { 
-        return this.register(new TsFieldDef(name, fieldType, isOptional));
+    public createField(name: string, fieldType?: TsTypeRef, isOptional?: boolean, initExpr?: TsExpr): TsFieldDef { 
+        return this.register(new TsFieldDef(name, fieldType, isOptional, initExpr));
     }
 
     apply<T, TRet>(visitor: ITsSourceUnitMemberVisitor<T, TRet>, arg: T): TRet {

@@ -1,6 +1,6 @@
 import { IXsdAttrsDeclsVisitor, IXsdComplexContentVisitor, IXsdComplexTypeModelVisitor, IXsdLocalType, IXsdNamedGroupParticle, IXsdNamedGroupParticleVisitor, IXsdNestedParticle, IXsdNestedParticleVisitor, IXsdSchemaDeclarationVisitor, IXsdSchemaDefinition, IXsdSchemaDefinitionVisitor, IXsdTopLevelElementLocalType, IXsdTypeDefParticle, IXsdTypeDefParticleVisitor, XsdAllImpl, XsdAnnotation, XsdAny, XsdAttrDecls, XsdAttributeGroup, XsdAttributeGroupRef, XsdAttributeImpl, XsdAttributeUse, XsdComplexContent, XsdComplexRestrictionType, XsdComplexType, XsdExplicitChoiceGroupImpl, XsdExplicitSequenceGroupImpl, XsdExtensionTypeImpl, XsdFormChoice, XsdGroupRef, XsdImplicitComplexTypeModel, XsdImport, XsdInclude, XsdLocalComplexType, XsdLocalElement, XsdNamedAllParticleGroup, XsdNamedAttributeGroup, XsdNamedGroup, XsdNotation, XsdOccursAttrGroup, XsdRedefine, XsdSchema, XsdSimpleContent, XsdSimpleExplicitChoiceGroup, XsdSimpleExplicitSequenceGroup, XsdTopLevelAttribute, XsdTopLevelComplexType, XsdTopLevelElement, XsdTopLevelSimpleType } from './xsdschema'
 import xs from './serializer'
-import { ITsClassMemberVisitor, ITsExprVisitor, ITsSourceUnitMemberVisitor, ITsTypeRefVisitor, TsAnnotationsCollection, TsArrayLiteralExpr, TsArrayTypeRef, TsBooleanExpr, TsBuiltinTypeKind, TsBuiltinTypeRef, TsClassDef, TsCtorRefExpr, TsCustomTypeRef, TsEnumDef, TsExpr, TsFieldDef, TsLambdaExpr as TsLambdaExpr, TsInterfaceDef, TsMethodDef, TsMethodSignature, TsNullExpr, TsNumberExpr, TsObjLiteralExpr, TsSourceUnit, TsStringExpr, TsTypeRef, TsUndefinedExpr, TsGenericParameterDef } from './ts-dom'
+import { ITsClassMemberVisitor, ITsExprVisitor, ITsSourceUnitMemberVisitor, ITsTypeRefVisitor, TsAnnotationsCollection, TsArrayLiteralExpr, TsArrayTypeRef, TsBooleanExpr, TsBuiltinTypeKind, TsBuiltinTypeRef, TsClassDef, TsCtorRefExpr, TsCustomTypeRef, TsEnumDef, TsExpr, TsFieldDef, TsLambdaExpr as TsLambdaExpr, TsInterfaceDef, TsMethodDef, TsMethodSignature, TsNullExpr, TsNumberExpr, TsObjLiteralExpr, TsSourceUnit, TsStringExpr, TsTypeRef, TsUndefinedExpr, TsGenericParameterDef, TsConstructorCallExpr } from './ts-dom'
 import * as ts from 'typescript'
 import * as fs from 'fs'
 import { foreachSeparating, IndentedStringBuilder, LinkedQueue } from './utils'
@@ -109,10 +109,18 @@ class TsSourceTextBuilder implements ITsSourceUnitMemberVisitor<IndentedStringBu
     visitFieldDef(fieldDef: TsFieldDef, sb: IndentedStringBuilder): void {
         this.formatAnnotations(fieldDef.annotations, sb);
         sb.append(fieldDef.name);
-        
+        if (fieldDef.isOptional) {
+            sb.append("?");
+        }
+
         if (fieldDef.fieldType) {
             sb.append(': ');
             fieldDef.fieldType.apply(this, sb);
+        }
+
+        if (fieldDef.initExpr) {
+            sb.append(' = ');
+            fieldDef.initExpr.apply(this, sb);
         }
 
         sb.appendLine(';');
@@ -163,8 +171,14 @@ class TsSourceTextBuilder implements ITsSourceUnitMemberVisitor<IndentedStringBu
         }
     }
 
-
-    visitCtorRetExpr(ctor: TsCtorRefExpr, sb: IndentedStringBuilder): void {
+    visitConstructorCallExpr(ctorCall: TsConstructorCallExpr, sb: IndentedStringBuilder): void {
+        sb.append('new ');
+        ctorCall.typeRef.apply(this, sb);
+        sb.append('(');
+        foreachSeparating(ctorCall.args, e => e.apply(this, sb), () => sb.append(', '));
+        sb.append(')');
+    }
+    visitCtorRefExpr(ctor: TsCtorRefExpr, sb: IndentedStringBuilder): void {
         sb.append(ctor.typeName);
     }
     visitLambdaExpr(func: TsLambdaExpr, sb: IndentedStringBuilder): void {
@@ -299,21 +313,27 @@ class ChoiceGroupIfaceModel extends DefinitionTypesModel implements IGroupModel 
 }
 
 abstract class ClassFieldModel {
+    public readonly name: string;
+
     public constructor(
-        public readonly name: string,
+        name: string,
         private readonly itemOccurs: XsdOccursAttrGroup,
         protected readonly itemTypeRef: TsTypeRef
     ) {
+        const index = name.indexOf(':');
+        // TODO handle namespace prefix name.substring(0, separatorIndex)
+        this.name = index >= 0 ? name.substring(index + 1) : name;
     }
 
     public implement(classDef: TsClassDef) : void {
         const min = this.itemOccurs.min ?? 1;
         const max = this.itemOccurs.max ?? 1;
 
-        let itemTypeRef = max === 1 ? this.itemTypeRef : TsTypeRef.makeArray(this.itemTypeRef);
         let isOptional = min === 0 && max === 1;
+        let itemTypeRef = max === 1 ? this.itemTypeRef : TsTypeRef.makeArray(this.itemTypeRef);
+        let initExpr = max === 1 ? undefined : TsExpr.new(itemTypeRef);
 
-        const fieldDef = classDef.createField(this.name, itemTypeRef, isOptional);
+        const fieldDef = classDef.createField(this.name, itemTypeRef, isOptional, initExpr);
         return this.implementImpl(fieldDef);
     }
 
@@ -321,10 +341,10 @@ abstract class ClassFieldModel {
 
     protected makeOccursAnnotationParams() : [string, TsExpr][] {
         const arr = new Array<[string, TsExpr]>();
-        if (this.itemOccurs.min) {
+        if (this.itemOccurs.min && (this.itemOccurs.min !== 1 || (this.itemOccurs.max && this.itemOccurs.max !== 1))) {
             arr.push(['minOccurs', TsExpr.literalFromExample(this.itemOccurs.min)]);
         }
-        if (this.itemOccurs.max) {
+        if (this.itemOccurs.max && (this.itemOccurs.max !== 1 || (this.itemOccurs.min && this.itemOccurs.min !== 1))) {
             arr.push(['minOccurs', TsExpr.literalFromExample(this.itemOccurs.max)]);
         }
         return arr;
@@ -507,20 +527,26 @@ abstract class ClassModel extends DefinitionTypesModel {
         return part.apply(new class implements IXsdNestedParticleVisitor<ClassModel, FixupOperations> {
             visitLocalElement(localElement: XsdLocalElement, me: ClassModel): FixupOperations {
                 if (localElement.defRef.ref) {
+                    const index = localElement.defRef.ref.indexOf(':');
+                    // TODO handle namespace prefix name.substring(0, separatorIndex)
+                    const name = index >= 0 ? localElement.defRef.ref.substring(index + 1) : localElement.defRef.ref;
                     const topLevelElement = me.context.resolveTopLevelElement(localElement.defRef.ref);
                     if (topLevelElement) { topLevelElement.localType
-                        const elementModel = me.resolveTypeModel(me.name + '_' + localElement.defRef.ref, topLevelElement.typeName, topLevelElement.localType);
+                        const elementModel = me.resolveTypeModel(me.name + '_' + name, topLevelElement.typeName, topLevelElement.localType);
                         if (elementModel) {
-                            me.registerField(new ClassLocalElementFieldModel(localElement.defRef.ref, localElement, topLevelElement, elementModel));
+                            me.registerField(new ClassLocalElementFieldModel(name, localElement, topLevelElement, elementModel));
                             return elementModel.getDelayedOperations();
                         }
                     } else {
                         console.error('missing top level element def ' + localElement.defRef.ref);
                     }
                 } else if (localElement.defRef.name) {
-                    const elementModel = me.resolveTypeModel(me.name + '_' + localElement.defRef.name, localElement.typeName, localElement.localType);
+                    const index = localElement.defRef.name.indexOf(':');
+                    // TODO handle namespace prefix name.substring(0, separatorIndex)
+                    const name = index >= 0 ? localElement.defRef.name.substring(index + 1) : localElement.defRef.name;
+                    const elementModel = me.resolveTypeModel(me.name + '_' + name, localElement.typeName, localElement.localType);
                     if (elementModel) {
-                        me.registerField(new ClassLocalElementFieldModel(localElement.defRef.name, localElement, undefined, elementModel));
+                        me.registerField(new ClassLocalElementFieldModel(name, localElement, undefined, elementModel));
                         return elementModel.getDelayedOperations();
                     }
                 }
@@ -532,9 +558,12 @@ abstract class ClassModel extends DefinitionTypesModel {
                 return [];
             }
             visitGroupRef(groupRef: XsdGroupRef, me: ClassModel): FixupOperations {
-                const topLevelGroup = me.context.groups.get(groupRef.ref);
+                const index = groupRef.ref.indexOf(':');
+                // TODO handle namespace prefix name.substring(0, separatorIndex)
+                const name = index >= 0 ? groupRef.ref.substring(index + 1) : groupRef.ref;
+                const topLevelGroup = me.context.groups.get(name);
                 if (topLevelGroup) {
-                    me.registerField(new ClassElementsGroupFieldModel(groupRef.ref, groupRef, topLevelGroup));
+                    me.registerField(new ClassElementsGroupFieldModel(name, groupRef, topLevelGroup));
                 } else {
                     console.error('missing top level grop def ' + groupRef.ref);
                 }
@@ -722,6 +751,12 @@ class NamespaceModel {
     }
 
     public makeTypeName(name: string): string {
+        const index = name.indexOf(':');
+        if (index >= 0) {
+            // TODO handle namespace prefix name.substring(0, separatorIndex)
+            name = name.substring(index + 1);
+        }
+
         if (this.typeNamePrefix) {
             if (this.typeNamePrefix.endsWith('_')) { // snake-like
                 return this.typeNamePrefix + name; 
