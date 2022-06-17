@@ -140,6 +140,14 @@ class TsSourceTextBuilder implements ITsSourceUnitMemberVisitor<IndentedStringBu
         this.formatAnnotations(classDef.annotations, sb);
         sb.append('export class ').append(classDef.name);
         this.formatGenericParams(classDef.genericParams, sb);
+        if (classDef.baseType) {
+            sb.append(' extends ');
+            classDef.baseType.apply(this, sb);
+        }
+        if ((classDef.interfaces?.length ?? 0) > 0) {
+            sb.append(' implements ');
+            foreachSeparating(classDef.interfaces, t => t.apply(this, sb), () => sb.append(', '));
+        }
         sb.appendLine(' {').push();
         for (const m of classDef.members) {
             if (m.access) {
