@@ -486,7 +486,7 @@ abstract class ClassModel extends DefinitionTypesModel {
         return attrDecls.decls.flatMap(attrPart => attrPart.apply(new class implements IXsdAttrsDeclsVisitor<ClassModel, FixupOperations> {
             visitXsdAttribute(attr: XsdAttributeImpl, me: ClassModel): FixupOperations {
                 if (attr.defRef.ref) {
-                    const topLevelAttr = me.context.attributes.get(attr.defRef.ref);
+                    const topLevelAttr = me.context.resolveTopLevelAttribute(attr.defRef.ref);
                     if (topLevelAttr) {
                         me.registerField(new ClassAttributeFieldModel(topLevelAttr.name, attr, topLevelAttr));
                     } else {
@@ -500,7 +500,7 @@ abstract class ClassModel extends DefinitionTypesModel {
                 return [];
             }
             visitXsdAttributeGroupRef(groupRef: XsdAttributeGroupRef, me: ClassModel): FixupOperations {
-                const topLevelGroup = me.context.attributeGroups.get(groupRef.ref);
+                const topLevelGroup = me.context.resolveTopLevelAttrsGroup(groupRef.ref);
                 if (topLevelGroup) {
                     me.registerField(new ClassAttributeGroupFieldModel(groupRef.ref, groupRef, topLevelGroup));
                 } else {
@@ -794,6 +794,36 @@ class NamespaceModel {
             return model;
         } else {
             throw new Error('unsupported local type kind'); // TODO fix local type visitor
+        }
+    }
+
+    public resolveTopLevelAttrsGroup(name: string) : IGroupModel|undefined {
+        const separatorIndex = name.indexOf(':');
+        const attrsGroupName = separatorIndex < 0 ? name : (
+            // TODO handle namespace prefix name.substring(0, separatorIndex)
+            name.substring(separatorIndex + 1)
+        );
+
+        const model = this.attributeGroups.get(attrsGroupName);
+        if (model) {
+            return model;
+        } else {
+            throw new Error('unknown top level attributes group ' + attrsGroupName);
+        }
+    }
+
+    public resolveTopLevelAttribute(name: string) : XsdTopLevelAttribute|undefined {
+        const separatorIndex = name.indexOf(':');
+        const attrName = separatorIndex < 0 ? name : (
+            // TODO handle namespace prefix name.substring(0, separatorIndex)
+            name.substring(separatorIndex + 1)
+        );
+
+        const model = this.attributes.get(attrName);
+        if (model) {
+            return model;
+        } else {
+            throw new Error('unknown top level attribute ' + attrName);
         }
     }
 

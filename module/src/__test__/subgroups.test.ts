@@ -104,10 +104,10 @@ const cases = [
 
 for (const c of cases) {
     test('Deserialize ' + c.title, () => {
-        expect(xs.deserialize<any>(c.text, c.modelType)).toEqual(c.model);
+        expect(xs.deserialize(c.text, c.modelType)).toEqual(c.model);
     });
     test('Serialize ' + c.title, () => {
-        expect(xs.deserialize<any>(xs.serialize(c.model), c.modelType)).toEqual(c.model);
+        expect(xs.deserialize(xs.serialize(c.model), c.modelType)).toEqual(c.model);
     });
 }
 

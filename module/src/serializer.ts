@@ -1,7 +1,7 @@
 import { UnionType } from "typescript";
 import { XmlModelItemReference, XmlModelTypeInfo, XmlModelPropertyInfo, findModelTypeInfoByType, findModelTypeInfoByObjType, IXmlModelItemReference, DefaultCtor, CtorOf, AnyCtorOf } from "./annotations";
 import * as m from "./content-model";
-import { ImmStack, collectTree, isArray, IndentedStringBuilder, firstOrDefault, parallelMap } from "./utils";
+import { ImmStack, collectTree, isArray, IndentedStringBuilder, firstOrDefault, parallelMap, ConstructedType, ArrayElementType } from "./utils";
 
 const untype = ((x:any):any => x);
 
@@ -853,8 +853,8 @@ const serializeImpl = (root: any) : string => {
     const xmlText = writer.serializeToString(doc);
     return xmlText;
 };
-// deserialize: <T, C extends { new (): T }> (xml: string, ...types: C[]) : T => {
-const deserializeImpl = <T> (xml: string, ...type: CtorOf<T>[]) : T => {
+
+const deserializeImpl = <CtorsT extends CtorOf<any>[]> (xml: string, ...type: CtorsT) : ConstructedType<ArrayElementType<CtorsT>> => {
     const parser = new DOMParser();
     const dom = parser.parseFromString(xml, "application/xml");
     const rootElement = dom.documentElement;
