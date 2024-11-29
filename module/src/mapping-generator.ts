@@ -1,6 +1,6 @@
 import { IXsdAttrsDeclsVisitor, IXsdComplexContentVisitor, IXsdComplexTypeModelVisitor, IXsdLocalType, IXsdNamedGroupParticle, IXsdNamedGroupParticleVisitor, IXsdNestedParticle, IXsdNestedParticleVisitor, IXsdSchemaDeclarationVisitor, IXsdSchemaDefinition, IXsdSchemaDefinitionVisitor, IXsdTopLevelElementLocalType, IXsdTypeDefParticle, IXsdTypeDefParticleVisitor, XsdAllImpl, XsdAnnotation, XsdAny, XsdAttrDecls, XsdAttributeGroup, XsdAttributeGroupRef, XsdAttributeImpl, XsdAttributeUse, XsdComplexContent, XsdComplexRestrictionType, XsdComplexType, XsdExplicitChoiceGroupImpl, XsdExplicitSequenceGroupImpl, XsdExtensionTypeImpl, XsdFormChoice, XsdGroupRef, XsdImplicitComplexTypeModel, XsdImport, XsdInclude, XsdLocalComplexType, XsdLocalElement, XsdNamedAllParticleGroup, XsdNamedAttributeGroup, XsdNamedGroup, XsdNotation, XsdOccursAttrGroup, XsdRedefine, XsdSchema, XsdSimpleContent, XsdSimpleExplicitChoiceGroup, XsdSimpleExplicitSequenceGroup, XsdTopLevelAttribute, XsdTopLevelComplexType, XsdTopLevelElement, XsdTopLevelSimpleType } from './xsdschema'
 import xs from './serializer'
-import { ITsClassMemberVisitor, ITsExprVisitor, ITsSourceUnitMemberVisitor, ITsTypeRefVisitor, TsAnnotationsCollection, TsArrayLiteralExpr, TsArrayTypeRef, TsBooleanExpr, TsBuiltinTypeKind, TsBuiltinTypeRef, TsClassDef, TsCtorRefExpr, TsCustomTypeRef, TsEnumDef, TsExpr, TsFieldDef, TsLambdaExpr as TsLambdaExpr, TsInterfaceDef, TsMethodDef, TsMethodSignature, TsNullExpr, TsNumberExpr, TsObjLiteralExpr, TsSourceUnit, TsStringExpr, TsTypeRef, TsUndefinedExpr, TsGenericParameterDef } from './ts-dom'
+import { ITsClassMemberVisitor, ITsExprVisitor, ITsSourceUnitMemberVisitor, ITsTypeRefVisitor, TsAnnotationsCollection, TsArrayLiteralExpr, TsArrayTypeRef, TsBooleanExpr, TsBuiltinTypeKind, TsBuiltinTypeRef, TsClassDef, TsCtorRefExpr, TsCustomTypeRef, TsEnumDef, TsExpr, TsFieldDef, TsLambdaExpr as TsLambdaExpr, TsInterfaceDef, TsMethodDef, TsMethodSignature, TsNullExpr, TsNumberExpr, TsObjLiteralExpr, TsSourceUnit, TsStringExpr, TsTypeRef, TsUndefinedExpr, TsGenericParameterDef, TsConstructorCallExpr } from './ts-dom'
 import * as ts from 'typescript'
 import * as fs from 'fs'
 import { foreachSeparating, IndentedStringBuilder, LinkedQueue } from './utils'
@@ -65,7 +65,9 @@ class TsSourceTextBuilder implements ITsSourceUnitMemberVisitor<IndentedStringBu
     visitCustomTypeRef(customTypeRef: TsCustomTypeRef, sb: IndentedStringBuilder): void {
         sb.append(customTypeRef.name);
         if (customTypeRef.genericArgs) {
+            sb.append('<');
             foreachSeparating(customTypeRef.genericArgs, p => p.apply(this, sb), () => sb.append(', '));
+            sb.append('>');
         }
     }
 
@@ -74,7 +76,7 @@ class TsSourceTextBuilder implements ITsSourceUnitMemberVisitor<IndentedStringBu
             sb.append('<');
             foreachSeparating(genericParams, p => { 
                 sb.append(p.name);
-                if (p.baseTypes) {
+                if (p.baseTypes && p.baseTypes.length > 0) {
                     sb.append(' extends ');
                     foreachSeparating(p.baseTypes, r => r.apply(this, sb), () => sb.append(', '));
                 }
@@ -84,8 +86,9 @@ class TsSourceTextBuilder implements ITsSourceUnitMemberVisitor<IndentedStringBu
     }
 
     private formatMethodHead(name: string, signature: TsMethodSignature, sb: IndentedStringBuilder): void {
-        sb.append(name).append('(')
+        sb.append(name);
         this.formatGenericParams(signature.genericParams, sb);
+        sb.append('(');
         if (signature.parameters) {
             foreachSeparating(signature.parameters, p => { sb.append(p.name).append(': '); p.paramType.apply(this, sb); }, () => sb.append(', '));
         }
@@ -106,10 +109,18 @@ class TsSourceTextBuilder implements ITsSourceUnitMemberVisitor<IndentedStringBu
     visitFieldDef(fieldDef: TsFieldDef, sb: IndentedStringBuilder): void {
         this.formatAnnotations(fieldDef.annotations, sb);
         sb.append(fieldDef.name);
-        
+        if (fieldDef.isOptional) {
+            sb.append("?");
+        }
+
         if (fieldDef.fieldType) {
             sb.append(': ');
             fieldDef.fieldType.apply(this, sb);
+        }
+
+        if (fieldDef.initExpr) {
+            sb.append(' = ');
+            fieldDef.initExpr.apply(this, sb);
         }
 
         sb.appendLine(';');
@@ -129,6 +140,14 @@ class TsSourceTextBuilder implements ITsSourceUnitMemberVisitor<IndentedStringBu
         this.formatAnnotations(classDef.annotations, sb);
         sb.append('export class ').append(classDef.name);
         this.formatGenericParams(classDef.genericParams, sb);
+        if (classDef.baseType) {
+            sb.append(' extends ');
+            classDef.baseType.apply(this, sb);
+        }
+        if ((classDef.interfaces?.length ?? 0) > 0) {
+            sb.append(' implements ');
+            foreachSeparating(classDef.interfaces, t => t.apply(this, sb), () => sb.append(', '));
+        }
         sb.appendLine(' {').push();
         for (const m of classDef.members) {
             if (m.access) {
@@ -160,8 +179,14 @@ class TsSourceTextBuilder implements ITsSourceUnitMemberVisitor<IndentedStringBu
         }
     }
 
-
-    visitCtorRetExpr(ctor: TsCtorRefExpr, sb: IndentedStringBuilder): void {
+    visitConstructorCallExpr(ctorCall: TsConstructorCallExpr, sb: IndentedStringBuilder): void {
+        sb.append('new ');
+        ctorCall.typeRef.apply(this, sb);
+        sb.append('(');
+        foreachSeparating(ctorCall.args, e => e.apply(this, sb), () => sb.append(', '));
+        sb.append(')');
+    }
+    visitCtorRefExpr(ctor: TsCtorRefExpr, sb: IndentedStringBuilder): void {
         sb.append(ctor.typeName);
     }
     visitLambdaExpr(func: TsLambdaExpr, sb: IndentedStringBuilder): void {
@@ -296,21 +321,27 @@ class ChoiceGroupIfaceModel extends DefinitionTypesModel implements IGroupModel 
 }
 
 abstract class ClassFieldModel {
+    public readonly name: string;
+
     public constructor(
-        public readonly name: string,
+        name: string,
         private readonly itemOccurs: XsdOccursAttrGroup,
         protected readonly itemTypeRef: TsTypeRef
     ) {
+        const index = name.indexOf(':');
+        // TODO handle namespace prefix name.substring(0, separatorIndex)
+        this.name = index >= 0 ? name.substring(index + 1) : name;
     }
 
     public implement(classDef: TsClassDef) : void {
         const min = this.itemOccurs.min ?? 1;
         const max = this.itemOccurs.max ?? 1;
 
-        let itemTypeRef = max === 1 ? this.itemTypeRef : TsTypeRef.makeArray(this.itemTypeRef);
         let isOptional = min === 0 && max === 1;
+        let itemTypeRef = max === 1 ? this.itemTypeRef : TsTypeRef.makeArray(this.itemTypeRef);
+        let initExpr = max === 1 ? undefined : TsExpr.new(itemTypeRef);
 
-        const fieldDef = classDef.createField(this.name, itemTypeRef, isOptional);
+        const fieldDef = classDef.createField(this.name, itemTypeRef, isOptional, initExpr);
         return this.implementImpl(fieldDef);
     }
 
@@ -318,10 +349,10 @@ abstract class ClassFieldModel {
 
     protected makeOccursAnnotationParams() : [string, TsExpr][] {
         const arr = new Array<[string, TsExpr]>();
-        if (this.itemOccurs.min) {
+        if (this.itemOccurs.min && (this.itemOccurs.min !== 1 || (this.itemOccurs.max && this.itemOccurs.max !== 1))) {
             arr.push(['minOccurs', TsExpr.literalFromExample(this.itemOccurs.min)]);
         }
-        if (this.itemOccurs.max) {
+        if (this.itemOccurs.max && (this.itemOccurs.max !== 1 || (this.itemOccurs.min && this.itemOccurs.min !== 1))) {
             arr.push(['minOccurs', TsExpr.literalFromExample(this.itemOccurs.max)]);
         }
         return arr;
@@ -442,7 +473,7 @@ abstract class ClassModel extends DefinitionTypesModel {
     }
 
     protected registerField(fieldModel: ClassFieldModel) : ClassFieldModel {
-        console.log(`registering field '${fieldModel.name}' for type '${this.name}' of '${fieldModel.constructor.name}' kind`);
+        // console.log(`registering field '${fieldModel.name}' for type '${this.name}' of '${fieldModel.constructor.name}' kind`);
         if (this._fields.get(fieldModel.name)) {
             throw new Error(`Field '${fieldModel.name}' already registered in type '${this.name}'`);
         } else {
@@ -455,21 +486,21 @@ abstract class ClassModel extends DefinitionTypesModel {
         return attrDecls.decls.flatMap(attrPart => attrPart.apply(new class implements IXsdAttrsDeclsVisitor<ClassModel, FixupOperations> {
             visitXsdAttribute(attr: XsdAttributeImpl, me: ClassModel): FixupOperations {
                 if (attr.defRef.ref) {
-                    const topLevelAttr = me.context.attributes.get(attr.defRef.ref);
+                    const topLevelAttr = me.context.resolveTopLevelAttribute(attr.defRef.ref);
                     if (topLevelAttr) {
                         me.registerField(new ClassAttributeFieldModel(topLevelAttr.name, attr, topLevelAttr));
                     } else {
-                        console.error('missing top level attr reference');
+                        console.error('missing top level attr reference ' + attr.defRef.ref);
                     }
                 } else if (attr.defRef.name) {
                     me.registerField(new ClassAttributeFieldModel(attr.defRef.name, attr));
                 } else {
-                    console.error('invalid attr def');
+                    console.error(`invalid attr def in type '${me.name}'`);
                 }
                 return [];
             }
             visitXsdAttributeGroupRef(groupRef: XsdAttributeGroupRef, me: ClassModel): FixupOperations {
-                const topLevelGroup = me.context.attributeGroups.get(groupRef.ref);
+                const topLevelGroup = me.context.resolveTopLevelAttrsGroup(groupRef.ref);
                 if (topLevelGroup) {
                     me.registerField(new ClassAttributeGroupFieldModel(groupRef.ref, groupRef, topLevelGroup));
                 } else {
@@ -480,35 +511,67 @@ abstract class ClassModel extends DefinitionTypesModel {
         }, this));
     }
 
+    /*
+    private registerElementField(contextName: string, def: XsdLocalElement, fieldName: string, complexTypeName: string, localType?: IXsdTopLevelElementLocalType|IXsdLocalType) : FixupOperation {
+        const elementModel = localType ? this.context.makeLocalType(contextName, localType) : this.context.resolveComplexType(complexTypeName);
+         // me.name, topLevelElement.typeName ?? topLevelElement.name, topLevelElement.localType);
+        me.registerField(new ClassLocalElementFieldModel(fieldName, localElement, topLevelElement, elementModel));
+        return elementModel.getDelayedOperations();
+
+    }
+    */
+
+    private resolveTypeModel(contextName: string, typeName?: string, localType?: IXsdTopLevelElementLocalType|IXsdLocalType) : ComplexTypeClassModel|undefined {
+        if (typeName) {
+            return this.context.resolveComplexType(typeName);
+        } else if (localType) {
+            return this.context.makeLocalType(this.name + '_' + contextName, localType);
+        } else {
+            return undefined;
+        }
+    }
+
     protected dispatchExplicitNestedMembers(part: IXsdNestedParticle) : FixupOperations {
         return part.apply(new class implements IXsdNestedParticleVisitor<ClassModel, FixupOperations> {
             visitLocalElement(localElement: XsdLocalElement, me: ClassModel): FixupOperations {
                 if (localElement.defRef.ref) {
-                    const topLevelElement = me.context.elements.get(localElement.defRef.ref);
-                    if (topLevelElement) {
-                        const elementModel = me.context.obtainElementTypeModel(me.name, topLevelElement.typeName ?? topLevelElement.name, topLevelElement.localType);
-                        me.registerField(new ClassLocalElementFieldModel(localElement.defRef.ref, localElement, topLevelElement, elementModel));
-                        return elementModel.getDelayedOperations();
+                    const index = localElement.defRef.ref.indexOf(':');
+                    // TODO handle namespace prefix name.substring(0, separatorIndex)
+                    const name = index >= 0 ? localElement.defRef.ref.substring(index + 1) : localElement.defRef.ref;
+                    const topLevelElement = me.context.resolveTopLevelElement(localElement.defRef.ref);
+                    if (topLevelElement) { topLevelElement.localType
+                        const elementModel = me.resolveTypeModel(me.name + '_' + name, topLevelElement.typeName, topLevelElement.localType);
+                        if (elementModel) {
+                            me.registerField(new ClassLocalElementFieldModel(name, localElement, topLevelElement, elementModel));
+                            return elementModel.getDelayedOperations();
+                        }
                     } else {
                         console.error('missing top level element def ' + localElement.defRef.ref);
-                        return [];
                     }
                 } else if (localElement.defRef.name) {
-                    const elementModel = me.context.obtainElementTypeModel(me.name, localElement.typeName ?? localElement.defRef.name, localElement.localType);
-                    me.registerField(new ClassLocalElementFieldModel(localElement.defRef.name, localElement, undefined, elementModel));
-                    return elementModel.getDelayedOperations();
-                } else {
-                    console.error('invalid element def');
-                    return [];
+                    const index = localElement.defRef.name.indexOf(':');
+                    // TODO handle namespace prefix name.substring(0, separatorIndex)
+                    const name = index >= 0 ? localElement.defRef.name.substring(index + 1) : localElement.defRef.name;
+                    const elementModel = me.resolveTypeModel(me.name + '_' + name, localElement.typeName, localElement.localType);
+                    if (elementModel) {
+                        me.registerField(new ClassLocalElementFieldModel(name, localElement, undefined, elementModel));
+                        return elementModel.getDelayedOperations();
+                    }
                 }
+                console.error(`failed to resolve type for element ${localElement.defRef.name ?? localElement.defRef.ref} in type ${me.name}`);
+                return [];
             }
             visitAnyElement(anyElement: XsdAny, me: ClassModel): FixupOperations {
-                throw new Error('nested any element part not implemented.')
+                console.error('nested any element part not implemented.')
+                return [];
             }
             visitGroupRef(groupRef: XsdGroupRef, me: ClassModel): FixupOperations {
-                const topLevelGroup = me.context.groups.get(groupRef.ref);
+                const index = groupRef.ref.indexOf(':');
+                // TODO handle namespace prefix name.substring(0, separatorIndex)
+                const name = index >= 0 ? groupRef.ref.substring(index + 1) : groupRef.ref;
+                const topLevelGroup = me.context.groups.get(name);
                 if (topLevelGroup) {
-                    me.registerField(new ClassElementsGroupFieldModel(groupRef.ref, groupRef, topLevelGroup));
+                    me.registerField(new ClassElementsGroupFieldModel(name, groupRef, topLevelGroup));
                 } else {
                     console.error('missing top level grop def ' + groupRef.ref);
                 }
@@ -521,7 +584,7 @@ abstract class ClassModel extends DefinitionTypesModel {
                 return choiceModel.getDelayedOperations();
             }
             visitSequenceGroup(seqGroup: XsdExplicitSequenceGroupImpl, me: ClassModel): FixupOperations {
-                if (seqGroup.occurs.max ?? 1 > 1) {
+                if ((seqGroup.occurs.max ?? 1) > 1) {
                     const num =  me._fields.size;
                     const groupModel = me.context.createSequenceGroup(me.name + 'ContentGroup' + num, seqGroup);
                     me.registerField(new ClassElementsGroupFieldModel('contentGroup' + num, seqGroup, groupModel));
@@ -641,7 +704,7 @@ class ComplexTypeClassModel extends ClassModel {
 
     private dispatchExplicitMembers(baseComplexTypeName: string|undefined, inheritanceMode: InheritanceMode, particle: IXsdTypeDefParticle|undefined, attrDecls: XsdAttrDecls) : FixupOperations {
         if (baseComplexTypeName) {
-            this._baseTypeModel = this.context.complexTypes.get(baseComplexTypeName);
+            this._baseTypeModel = this.context.resolveComplexType(baseComplexTypeName);
             this._inheritanceMode = inheritanceMode;
         }
         
@@ -696,6 +759,12 @@ class NamespaceModel {
     }
 
     public makeTypeName(name: string): string {
+        const index = name.indexOf(':');
+        if (index >= 0) {
+            // TODO handle namespace prefix name.substring(0, separatorIndex)
+            name = name.substring(index + 1);
+        }
+
         if (this.typeNamePrefix) {
             if (this.typeNamePrefix.endsWith('_')) { // snake-like
                 return this.typeNamePrefix + name; 
@@ -706,37 +775,85 @@ class NamespaceModel {
             return name;
         }
     }
-    
-    public obtainElementTypeModel(contextName: string, complexTypeName: string, localType?: IXsdTopLevelElementLocalType|IXsdLocalType) : ComplexTypeClassModel {
-        if (localType) {
-            complexTypeName = complexTypeName ?? (contextName + 'Content');
-            if (this.complexTypes.get(complexTypeName)) {
-                complexTypeName = contextName + '_' + complexTypeName;
-            }
-            if (this.complexTypes.get(complexTypeName)) {
-                console.warn('TODO: resolve generated type name conflicts');  // TODO: resolve generated type name conflicts'
-            }
-            
-            if (localType instanceof XsdLocalComplexType) {
-                const fakeComplexType = new XsdComplexType();
-                fakeComplexType.annotation = localType.annotation;
-                fakeComplexType.id = localType.id;
-                fakeComplexType.mixed = localType.mixed;
-                fakeComplexType.model = localType.model;
-                fakeComplexType.rawNode = localType.rawNode;
 
-                const model = this.createComplexType(complexTypeName, fakeComplexType, false, '', '');
-                return model;
-            } else {
-                throw new Error('unsupported local type kind'); // TODO fix local type visitor
-            }
+    public makeLocalType(contextName: string, localType: IXsdTopLevelElementLocalType|IXsdLocalType) : ComplexTypeClassModel {
+        let complexTypeName = contextName + 'Content';
+        while (this.complexTypes.get(complexTypeName)) {
+            complexTypeName = contextName + 'Ex';
+        }
+        
+        if (localType instanceof XsdLocalComplexType) {
+            const fakeComplexType = new XsdComplexType();
+            fakeComplexType.annotation = localType.annotation;
+            fakeComplexType.id = localType.id;
+            fakeComplexType.mixed = localType.mixed;
+            fakeComplexType.model = localType.model;
+            fakeComplexType.rawNode = localType.rawNode;
+
+            const model = this.createComplexType(complexTypeName, fakeComplexType, false, '', '');
+            return model;
         } else {
-            const model = this.complexTypes.get(complexTypeName);
-            if (model) {
-                return model;
-            } else {
-                throw new Error('unknown top level complex type ' + complexTypeName);
-            }
+            throw new Error('unsupported local type kind'); // TODO fix local type visitor
+        }
+    }
+
+    public resolveTopLevelAttrsGroup(name: string) : IGroupModel|undefined {
+        const separatorIndex = name.indexOf(':');
+        const attrsGroupName = separatorIndex < 0 ? name : (
+            // TODO handle namespace prefix name.substring(0, separatorIndex)
+            name.substring(separatorIndex + 1)
+        );
+
+        const model = this.attributeGroups.get(attrsGroupName);
+        if (model) {
+            return model;
+        } else {
+            throw new Error('unknown top level attributes group ' + attrsGroupName);
+        }
+    }
+
+    public resolveTopLevelAttribute(name: string) : XsdTopLevelAttribute|undefined {
+        const separatorIndex = name.indexOf(':');
+        const attrName = separatorIndex < 0 ? name : (
+            // TODO handle namespace prefix name.substring(0, separatorIndex)
+            name.substring(separatorIndex + 1)
+        );
+
+        const model = this.attributes.get(attrName);
+        if (model) {
+            return model;
+        } else {
+            throw new Error('unknown top level attribute ' + attrName);
+        }
+    }
+
+    public resolveTopLevelElement(name: string) : XsdTopLevelElement|undefined {
+        const separatorIndex = name.indexOf(':');
+        const elementName = separatorIndex < 0 ? name : (
+            // TODO handle namespace prefix name.substring(0, separatorIndex)
+            name.substring(separatorIndex + 1)
+        );
+
+        const model = this.elements.get(elementName);
+        if (model) {
+            return model;
+        } else {
+            throw new Error('unknown top level element ' + elementName);
+        }
+    }
+
+    public resolveComplexType(complexTypeName: string) : ComplexTypeClassModel|undefined {
+        const separatorIndex = complexTypeName.indexOf(':');
+        const typeName = separatorIndex < 0 ? complexTypeName : (
+            // TODO handle namespace prefix complexTypeName.substring(0, separatorIndex)
+            complexTypeName.substring(separatorIndex + 1)
+        );
+
+        const model = this.complexTypes.get(typeName);
+        if (model) {
+            return model;
+        } else {
+            throw new Error('unknown top level complex type ' + typeName);
         }
     }
 
@@ -837,8 +954,10 @@ class SchemaDefinitionsCollector implements IXsdSchemaDeclarationVisitor<Namespa
         schema.definitions.forEach(d => d.apply(this, context));
 
         context.elements.forEach(el => {
-            const typeModel = context.obtainElementTypeModel(el.name, el.typeName, el.localType);
-            typeModel.registerRootElement(el);
+            const typeModel = el.localType ? context.makeLocalType(el.name, el.localType) : context.resolveComplexType(el.typeName);
+            if (typeModel) {
+                typeModel.registerRootElement(el);
+            }
         });
     }
 

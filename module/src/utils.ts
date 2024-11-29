@@ -1,5 +1,11 @@
 import { AnyCtorOf, CtorOf } from "annotations";
 
+
+export type ArrayElementType<ArrayType extends readonly unknown[]> = ArrayType extends readonly (infer ElementType)[] ? ElementType : never;
+
+export type ConstructedType<CtorT extends CtorOf<any>> = CtorT extends CtorOf<infer T> ? T : never;
+
+
 export function findBaseTypeOfType<T extends R, R>(Class: AnyCtorOf<T>) : AnyCtorOf<R> {
     const base = Object.getPrototypeOf(Class.prototype)?.constructor;
     // return (base && (base !== {}.constructor)) ? base : null;
